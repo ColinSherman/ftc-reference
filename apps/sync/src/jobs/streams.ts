@@ -1,6 +1,7 @@
 import { nowIso } from "@ftcref/db";
 import {
   alignMatches,
+  autoTimedClip,
   parseYoutubeSource,
   parseYoutubeUrl,
   recordApiUsage,
@@ -154,21 +155,16 @@ async function alignInner(env: Env, yt: YouTube, usage: { rss: number }, limit: 
     if (ok) {
       for (const [matchId, p] of placed) {
         stmts.push(
-          env.DB.prepare(
-            `INSERT OR IGNORE INTO videos (match_id, provider, video_id, start_s, source, status, title, channel_id,
-               channel_title, confidence, reason, created_at, reviewed_at)
-             VALUES (?, 'youtube', ?, ?, 'auto_align', 'approved', ?, ?, ?, 'high', ?, ?, ?)`,
-          ).bind(
+          autoTimedClip(env.DB, {
             matchId,
-            p.videoId,
-            p.startS,
-            p.title,
-            p.channelId,
-            p.channel,
-            `event livestream, auto-timed (${placed.size}/${matches.length} matches in stream)`,
+            videoId: p.videoId,
+            startS: p.startS,
+            title: p.title,
+            channelId: p.channelId,
+            channelTitle: p.channel,
+            reason: `event livestream, auto-timed (${placed.size}/${matches.length} matches in stream)`,
             now,
-            now,
-          ),
+          }),
         );
       }
       matchesAligned += placed.size;

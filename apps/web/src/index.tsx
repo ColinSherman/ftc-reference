@@ -3,6 +3,7 @@ import { FAVICON_SVG } from "./assets";
 import type { Env } from "./env";
 import { adminRoutes } from "./routes/admin";
 import { avatarRoutes } from "./routes/avatar";
+import { channelRoutes } from "./routes/channels";
 import { eventRoutes } from "./routes/event";
 import { homeRoutes } from "./routes/home";
 import { matchRoutes } from "./routes/match";
@@ -34,6 +35,7 @@ app.route("/teams", teamRoutes);
 app.route("/events", eventRoutes);
 app.route("/events", matchRoutes);
 app.route("/", adminRoutes);
+app.route("/", channelRoutes);
 app.route("/", videoRoutes);
 app.route("/", homeRoutes);
 

@@ -9,7 +9,7 @@ import { ytFor } from "../yt";
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
 
-const noStore = { "Cache-Control": "no-store" };
+export const noStore = { "Cache-Control": "no-store" };
 const YT_QUOTA = 10_000;
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -50,7 +50,7 @@ function LoginPage() {
   );
 }
 
-const ago = (iso: string | null | undefined) => {
+export const ago = (iso: string | null | undefined) => {
   if (!iso) return "never";
   const ms = Date.now() - Date.parse(iso);
   if (ms < MIN) return `${Math.max(0, Math.round(ms / 1000))}s ago`;

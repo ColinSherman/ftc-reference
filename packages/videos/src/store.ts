@@ -206,7 +206,9 @@ export async function anchorAlign(
         ),
     );
   }
-  // A manual anchor supersedes auto-timing (and any earlier anchor) of the same video at this event.
+  // A manual anchor supersedes auto-timing (and any earlier anchor) of the same video at this event,
+  // and redefines its timing, so any stored manual shift no longer applies.
+  stmts.unshift(db.prepare("DELETE FROM stream_shifts WHERE video_id = ?").bind(opts.videoId));
   stmts.unshift(
     db
       .prepare(
@@ -216,5 +218,33 @@ export async function anchorAlign(
       .bind(opts.videoId, opts.season, opts.code),
   );
   for (let i = 0; i < stmts.length; i += 100) await db.batch(stmts.slice(i, i + 100));
-  return { placed: stmts.length - 1, skipped };
+  return { placed: stmts.length - 2, skipped };
+}
+
+/**
+ * Insert one auto-timed clip. Applies the video's manual shift (stream_shifts) and never duplicates
+ * a match already linked to this video, so re-syncs can't undo a manual timing adjustment.
+ */
+export function autoTimedClip(
+  db: Pick<D1Database, "prepare">,
+  c: {
+    matchId: number;
+    videoId: string;
+    startS: number;
+    title: string | null;
+    channelId: string | null;
+    channelTitle: string | null;
+    reason: string;
+    now: string;
+  },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO videos (match_id, provider, video_id, start_s, source, status, title, channel_id,
+         channel_title, confidence, reason, created_at, reviewed_at)
+       SELECT ?1, 'youtube', ?2, MAX(0, ?3 + COALESCE((SELECT shift_s FROM stream_shifts WHERE video_id = ?2), 0)),
+              'auto_align', 'approved', ?4, ?5, ?6, 'high', ?7, ?8, ?8
+       WHERE NOT EXISTS (SELECT 1 FROM videos WHERE match_id = ?1 AND video_id = ?2)`,
+    )
+    .bind(c.matchId, c.videoId, c.startS, c.title, c.channelId, c.channelTitle, c.reason, c.now);
 }

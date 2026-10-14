@@ -1,6 +1,7 @@
 import { nowIso } from "@ftcref/db";
 import {
   alignMatches,
+  autoTimedClip,
   rssVideos,
   type StreamWindow,
   similarity,
@@ -65,13 +66,34 @@ export async function alignBroadcasterStreams(env: Env, yt: YouTube, usage: { rs
       const startMs = Date.parse(startIso);
       const endMs = d.liveEnd ? Date.parse(d.liveEnd) : d.durationS ? startMs + d.durationS * 1000 : null;
       const now = nowIso();
-      const mark = (matched: string | null) =>
+      const logStream = (ev: Candidate | null, n: number) =>
         env.DB.prepare(
+          `INSERT INTO channel_streams (video_id, channel_id, title, live_start, live_end, season, event_code, matches, checked_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+           ON CONFLICT (video_id) DO UPDATE SET title = ?3, live_start = ?4, live_end = ?5, season = ?6,
+             event_code = ?7, matches = ?8, checked_at = ?9`,
+        )
+          .bind(
+            d.videoId,
+            ch.channel_id,
+            d.title,
+            d.liveStart ?? d.publishedAt,
+            d.liveEnd,
+            ev?.season ?? null,
+            ev?.code ?? null,
+            n,
+            now,
+          )
+          .run();
+      const mark = async (matched: string | null, ev: Candidate | null = null, n = 0) => {
+        await logStream(ev, n);
+        return env.DB.prepare(
           "INSERT INTO sync_state (key, last_checked_at, last_changed_at) VALUES (?1, ?2, ?3) " +
             "ON CONFLICT (key) DO UPDATE SET last_checked_at = ?2, last_changed_at = COALESCE(?3, last_changed_at)",
         )
           .bind(`bstream/${d.videoId}`, now, matched)
           .run();
+      };
       if (!d.liveStart && !d.durationS) {
         await mark(null);
         continue;
@@ -109,24 +131,19 @@ export async function alignBroadcasterStreams(env: Env, yt: YouTube, usage: { rs
         continue;
       }
       const stmts = best.aligned.map((a) =>
-        env.DB.prepare(
-          `INSERT OR IGNORE INTO videos (match_id, provider, video_id, start_s, source, status, title, channel_id,
-             channel_title, confidence, reason, created_at, reviewed_at)
-           VALUES (?, 'youtube', ?, ?, 'auto_align', 'approved', ?, ?, ?, 'high', ?, ?, ?)`,
-        ).bind(
-          a.matchId,
-          d.videoId,
-          a.startS,
-          d.title,
-          d.channelId,
-          d.channelTitle,
-          `broadcaster stream matched by time + title (${best?.aligned.length} matches)`,
+        autoTimedClip(env.DB, {
+          matchId: a.matchId,
+          videoId: d.videoId,
+          startS: a.startS,
+          title: d.title,
+          channelId: d.channelId,
+          channelTitle: d.channelTitle,
+          reason: `broadcaster stream matched by time + title (${best?.aligned.length} matches)`,
           now,
-          now,
-        ),
+        }),
       );
       for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
-      await mark(now);
+      await mark(now, best.ev, best.aligned.length);
       await env.CACHE_VER.put(`event:${best.ev.season}:${best.ev.code}`, Date.now().toString(36));
       streamsMatched++;
       matchesAligned += best.aligned.length;

@@ -501,9 +501,7 @@ videoRoutes.get("/admin/videos", async (c) => {
           {channels.map((ch) => (
             <tr>
               <td class="l">
-                <a href={`https://www.youtube.com/channel/${ch.channel_id}`} rel="noopener">
-                  {ch.title ?? ch.channel_id}
-                </a>
+                <a href={`/admin/channels/${ch.channel_id}`}>{ch.title ?? ch.channel_id}</a>
               </td>
               <td>{ch.trusted ? "✓" : ""}</td>
               <td>{ch.auto_scan ? "✓" : ""}</td>
