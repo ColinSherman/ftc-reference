@@ -31,7 +31,7 @@ main{max-width:1200px;margin:0 auto;padding:10px 16px 40px}
 .tabs{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px;margin:6px 0;padding:4px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .scroll{overflow-x:auto;max-width:100%}
 table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:nowrap}
-.st th,.st td{padding:2px 7px;border-bottom:1px solid var(--line);text-align:right}
+.st th,.st td{padding:2px 6px;border-bottom:1px solid var(--line);text-align:right}
 .st th{background:var(--head);border-top:1px solid var(--line);font-weight:bold;position:sticky;top:0;cursor:pointer;user-select:none}
 .st th[data-dir]:after{content:" ▾";color:var(--muted)}.st th[data-dir=asc]:after{content:" ▴"}
 .st .l{text-align:left}.st tbody tr:nth-child(even){background:var(--zebra)}.st tbody tr:hover{background:var(--hi)}
@@ -47,7 +47,7 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .mx{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:0 32px;align-items:start}
 @media (max-width:900px){.mx{grid-template-columns:minmax(0,1fr)}}
 .st td{font-variant-numeric:tabular-nums}
-.st a.tn{color:var(--fg)}.st a.tn:hover{color:var(--link)}
+.st a.tn{color:var(--fg);display:inline-block;max-width:12em;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}.st a.tn:hover{color:var(--link)}
 .ht{background:rgb(var(--heat) / calc(var(--h,0) * var(--heat-a)))}
 .av{display:inline-block;width:20px;height:20px;border-radius:3px;background:var(--tile);box-shadow:0 0 0 1px var(--line);vertical-align:-5px;margin-right:6px;object-fit:contain}
 .av0{background:var(--head)}
@@ -85,6 +85,10 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .st tr.nores td,.st tr.nores a.ev{color:var(--muted)}
 .filters .chk{justify-content:flex-end}.filters .chk span{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--fg);padding-bottom:3px}
 .st a.vid{color:var(--red);font-size:10px;text-decoration:none}.st a.vid:hover{color:var(--fg)}
+.st td.wrap{white-space:normal;min-width:16em}.st .sub{font-size:11px;color:var(--muted);margin-top:1px}
+.st a.vtag{font-size:10px;color:var(--red);white-space:nowrap;text-decoration:none}.st a.vtag:hover{text-decoration:underline}
+.st a.tn b.num{color:var(--link);font-weight:normal;margin-right:2px}.st .sub.ind{margin-left:26px}
+.st thead th{white-space:normal;vertical-align:bottom;line-height:1.15}
 .ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}

@@ -105,6 +105,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
     const format = c.req.query("format") ?? "all";
     const q = (c.req.query("q") ?? "").trim();
     const withResults = c.req.query("results") === "1";
+    const withVideo = c.req.query("video") === "1";
 
     const where = ["e.season = ?"];
     const args: (string | number)[] = [season];
@@ -136,7 +137,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
     }
 
     const d = db(c);
-    const [listR, regionsR] = await d.batch([
+    const [listR, regionsR, videosR] = await d.batch([
       d
         .prepare(
           `SELECT e.code, e.name, e.kind, e.type_name, e.city, e.state_prov, e.country, e.region_code, e.remote,
@@ -149,8 +150,19 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       d
         .prepare("SELECT DISTINCT region_code FROM events WHERE season = ? AND region_code IS NOT NULL")
         .bind(season),
+      d
+        .prepare(
+          `SELECT m.event_code, COUNT(*) AS n FROM videos v JOIN matches m ON m.id = v.match_id
+           WHERE m.season = ? AND v.status = 'approved' GROUP BY m.event_code`,
+        )
+        .bind(season),
     ]);
-    const events = (listR?.results ?? []) as EventListRow[];
+    const videoCount = new Map(
+      ((videosR?.results ?? []) as { event_code: string; n: number }[]).map((r) => [r.event_code, r.n]),
+    );
+    const events = ((listR?.results ?? []) as EventListRow[]).filter(
+      (e) => !withVideo || videoCount.has(e.code),
+    );
     const regions = ((regionsR?.results ?? []) as { region_code: string }[])
       .map((r) => r.region_code)
       .sort((a, b) => regionName(a).localeCompare(regionName(b)));
@@ -170,11 +182,13 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       if (format !== "all") p.set("format", format);
       if (q) p.set("q", q);
       if (withResults) p.set("results", "1");
+      if (withVideo) p.set("video", "1");
       const s = p.toString();
       return s ? `?${s}` : "";
     };
     const auto = { onchange: "this.form.submit()" } as Record<string, string>;
-    const filtered = type !== "comp" || region !== "all" || format !== "all" || !!q || withResults;
+    const filtered =
+      type !== "comp" || region !== "all" || format !== "all" || !!q || withResults || withVideo;
 
     return c.html(
       <Layout
@@ -271,6 +285,11 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
               <input type="checkbox" name="results" value="1" checked={withResults} {...auto} /> Has results
             </span>
           </label>
+          <label class="chk">
+            <span>
+              <input type="checkbox" name="video" value="1" checked={withVideo} {...auto} /> Has video
+            </span>
+          </label>
           <button type="submit" class="go">
             Filter
           </button>
@@ -290,8 +309,6 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
                 <tr>
                   <th class="l">Dates</th>
                   <th class="l">Event</th>
-                  <th class="l">Type</th>
-                  <th class="l">Location</th>
                   <th>Teams</th>
                   <th title="Matches with results">Played</th>
                   <th class="l">Status</th>
@@ -300,7 +317,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
               {[...weeks].map(([w, es]) => (
                 <tbody>
                   <tr class="wkh">
-                    <th colspan={7}>
+                    <th colspan={5}>
                       {w < 1 ? "Preseason" : `Week ${w}`}
                       <span>
                         {weekRange(desc, w)} · {es.length} event{es.length === 1 ? "" : "s"}
@@ -320,7 +337,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
                       <td class="l" data-v={e.date_start}>
                         {fmtDateRange(e.date_start, e.date_end)}
                       </td>
-                      <td class="l">
+                      <td class="l wrap">
                         <a class="ev" href={`/events/${season}/${e.code}`}>
                           {e.name}
                         </a>{" "}
@@ -329,10 +346,21 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
                             ● results
                           </span>
                         )}{" "}
+                        {videoCount.has(e.code) && (
+                          <a
+                            class="vtag"
+                            href={`/events/${season}/${e.code}#matches`}
+                            title={`${videoCount.get(e.code)} matches with video`}
+                          >
+                            ▶ video
+                          </a>
+                        )}{" "}
                         {e.remote ? <span class="pill">remote</span> : ""}
+                        <div class="sub">
+                          {(e.kind && KIND_LABELS[e.kind]) ?? e.type_name} ·{" "}
+                          {[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}
+                        </div>
                       </td>
-                      <td class="l">{(e.kind && KIND_LABELS[e.kind]) ?? e.type_name}</td>
-                      <td class="l">{[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}</td>
                       <td>{e.teams || ""}</td>
                       <td>{e.played || ""}</td>
                       <td class="l">
@@ -691,8 +719,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
             <Table>
               <thead>
                 <tr>
-                  <th>Team</th>
-                  <th class="l">Name</th>
+                  <th class="l">Team</th>
                   {!remote && <Th k="W-L-T" />}
                   {statCols.map((s) => s.head)}
                 </tr>
@@ -700,11 +727,8 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
               <tbody>
                 {stats.map((s) => (
                   <tr>
-                    <td>
-                      <a href={`/teams/${s.team}?season=${season}`}>{s.team}</a>
-                    </td>
-                    <td class="l">
-                      <TeamName team={s.team} name={s.name_short} av={s.av} />
+                    <td class="l" data-v={s.team}>
+                      <TeamName team={s.team} name={s.name_short} av={s.av} num season={season} />
                     </td>
                     {!remote && <td data-v={s.wins}>{wlt(s.wins ?? 0, s.losses ?? 0, s.ties ?? 0)}</td>}
                     {statCols.map((col) => (

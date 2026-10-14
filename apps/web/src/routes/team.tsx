@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { regionName } from "../regions";
-import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
+import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
 import { Av, CompTh, Result, StatBox, Th } from "../views/ui";
 
 export const teamRoutes = new Hono<{ Bindings: Env }>();
@@ -302,7 +302,6 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
             <Table>
               <thead>
                 <tr>
-                  <th class="l">Dates</th>
                   <th class="l">Event</th>
                   <Th k="Rk" />
                   <Th k="W-L-T" />
@@ -320,11 +319,9 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
               <tbody>
                 {events.map((e) => (
                   <tr>
-                    <td class="l" data-v={e.date_start}>
-                      {fmtDateRange(e.date_start, e.date_end)}
-                    </td>
-                    <td class="l">
+                    <td class="l wrap" data-v={e.date_start}>
                       <a href={`/events/${season}/${e.code}`}>{e.name}</a>
+                      <div class="sub">{fmtShortRange(e.date_start, e.date_end)}</div>
                     </td>
                     <td>{e.official_rank ?? ""}</td>
                     <td data-v={e.wins ?? 0}>

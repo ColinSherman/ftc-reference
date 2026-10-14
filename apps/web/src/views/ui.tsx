@@ -24,13 +24,27 @@ export function Av(props: { team: number; k?: string | null; size?: "sm" | "xl" 
 }
 
 /** "[avatar] Name" cell content linking to the team page. */
-export function TeamName(props: { team: number; name: string | null | undefined; av?: string | null }) {
+/**
+ * "[avatar] Name" cell content linking to the team page. `num` prefixes the team number (so tables
+ * don't need a separate number column); `sub` adds a small second line (location, etc.); `season`
+ * deep-links to that season of the team page.
+ */
+export function TeamName(props: {
+  team: number;
+  name: string | null | undefined;
+  av?: string | null;
+  num?: boolean;
+  sub?: string | null;
+  season?: number;
+}) {
+  const href = props.season ? `/teams/${props.team}?season=${props.season}` : `/teams/${props.team}`;
   return (
     <>
       <Av team={props.team} k={props.av} />
-      <a href={`/teams/${props.team}`} class="tn">
-        {props.name ?? `Team ${props.team}`}
+      <a href={href} class="tn" title={props.name ?? undefined}>
+        {props.num && <b class="num">{props.team}</b>} {props.name ?? (props.num ? "" : `Team ${props.team}`)}
       </a>
+      {props.sub && <div class="sub ind">{props.sub}</div>}
     </>
   );
 }

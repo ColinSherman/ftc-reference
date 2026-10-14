@@ -77,3 +77,13 @@ export const fmtDateRange = (a: string, b: string) => {
   const e = b.slice(0, 10);
   return s === e ? s : `${s} – ${e.slice(5)}`;
 };
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** Compact range for narrow cells: "Oct 10", "Oct 10–11", "Dec 31–Jan 2". */
+export const fmtShortRange = (a: string, b: string) => {
+  const [, am, ad] = a.slice(0, 10).split("-").map(Number) as [number, number, number];
+  const [, bm, bd] = b.slice(0, 10).split("-").map(Number) as [number, number, number];
+  const s = `${MON[am - 1]} ${ad}`;
+  if (a.slice(0, 10) === b.slice(0, 10)) return s;
+  return am === bm ? `${s}–${bd}` : `${s}–${MON[bm - 1]} ${bd}`;
+};

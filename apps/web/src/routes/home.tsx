@@ -453,9 +453,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Team</th>
-                <th class="l">Name</th>
-                <th class="l">Loc</th>
+                <th class="l">Team</th>
                 <Th k="Ev" />
                 <Th k="W-L-T" />
                 {cols.map((cl) => cl.head)}
@@ -465,13 +463,16 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
               {results.map((r, i) => (
                 <tr>
                   <td>{i + 1}</td>
-                  <td>
-                    <a href={`/teams/${r.team}?season=${season}`}>{r.team}</a>
+                  <td class="l" data-v={r.team}>
+                    <TeamName
+                      team={r.team}
+                      name={r.name_short as string | null}
+                      av={r.av}
+                      num
+                      season={season}
+                      sub={[r.state_prov, r.country].filter(Boolean).join(", ")}
+                    />
                   </td>
-                  <td class="l">
-                    <TeamName team={r.team} name={r.name_short as string | null} av={r.av} />
-                  </td>
-                  <td class="l">{[r.state_prov, r.country].filter(Boolean).join(", ")}</td>
                   <td>{r.events_played}</td>
                   <td data-v={r.wins}>{wlt(n(r.wins) ?? 0, n(r.losses) ?? 0, n(r.ties) ?? 0)}</td>
                   {cols.map((cl) => (
@@ -546,13 +547,15 @@ homeRoutes.get("/search", async (c) => {
             <tbody>
               {teams.map((t) => (
                 <tr>
-                  <td>
-                    <a href={`/teams/${t.number}`}>{t.number}</a>
+                  <td class="l wrap">
+                    <TeamName
+                      team={t.number}
+                      name={t.name_short}
+                      av={t.av}
+                      num
+                      sub={[t.city, t.state_prov, t.country].filter(Boolean).join(", ")}
+                    />
                   </td>
-                  <td class="l">
-                    <TeamName team={t.number} name={t.name_short} av={t.av} />
-                  </td>
-                  <td class="l note">{[t.city, t.state_prov, t.country].filter(Boolean).join(", ")}</td>
                 </tr>
               ))}
             </tbody>
@@ -564,12 +567,12 @@ homeRoutes.get("/search", async (c) => {
               {events.map((e) => (
                 <tr>
                   <td class="l note">{e.season}</td>
-                  <td class="l">
+                  <td class="l wrap">
                     <a href={`/events/${e.season}/${e.code}`}>{e.name}</a>
-                  </td>
-                  <td class="l note">
-                    {fmtDateRange(e.date_start, e.date_end)} ·{" "}
-                    {[e.city, e.state_prov].filter(Boolean).join(", ")}
+                    <div class="sub">
+                      {fmtDateRange(e.date_start, e.date_end)} ·{" "}
+                      {[e.city, e.state_prov].filter(Boolean).join(", ")}
+                    </div>
                   </td>
                 </tr>
               ))}
