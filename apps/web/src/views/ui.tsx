@@ -1,3 +1,4 @@
+import { ALL_SEASONS, type Component, SEASONS, seasonLabel } from "@ftcref/seasons";
 import type { Child } from "hono/jsx";
 
 /**
@@ -54,6 +55,7 @@ export const STAT_TIPS: Record<string, string> = {
   CCWM: "Calculated Contribution to Winning Margin = NP OPR − DPR",
   "Avg NP": "Average alliance no-penalty score in this team's matches (includes partners)",
   "Max NP": "Highest alliance no-penalty score in this team's matches",
+  Endgame: "Endgame OPR: end-of-match points (park/ascent/drone…) contributed per match",
   "RP/M": "Ranking points per match",
   "Best NP": "Best single-event NP OPR this season",
   "Latest NP": "NP OPR at the team's most recent event",
@@ -142,4 +144,23 @@ export function eventStatus(
 export function StatusPill(props: { s: EventStatus }) {
   const label = props.s === "live" ? "LIVE" : props.s === "upcoming" ? "Upcoming" : "Final";
   return <span class={`pill st-${props.s}`}>{label}</span>;
+}
+
+/** Season dropdown that navigates on change (plain links in <noscript> would be overkill here). */
+export function SeasonSelect(props: { current: number; href: (season: number) => string }) {
+  const attrs = { onchange: "location.href=this.value" } as Record<string, string>;
+  return (
+    <select class="ssel" aria-label="Season" {...attrs}>
+      {ALL_SEASONS.map((s) => (
+        <option value={props.href(s)} selected={s === props.current}>
+          {seasonLabel(s)} {SEASONS[s]?.game}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Header for a season-specific OPR component (label + tip come from the season descriptor). */
+export function CompTh(props: { c: Component; prefix?: string }) {
+  return <th title={props.c.tip}>{props.prefix ? `${props.prefix} ${props.c.label}` : props.c.label}</th>;
 }

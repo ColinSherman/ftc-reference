@@ -23,6 +23,7 @@ export function Layout(props: { title: string; description?: string; children: C
             <nav>
               <a href="/events/2026">Events</a>
               <a href="/seasons/2026/leaders">Leaders</a>
+              <a href="/seasons">Seasons</a>
             </nav>
             <form action="/search">
               <input name="q" type="search" placeholder="Search teams, events…  ( / )" aria-label="Search" />

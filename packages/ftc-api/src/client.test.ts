@@ -51,3 +51,17 @@ describe("FtcApi", () => {
     expect(parseJsonBody("   ", "application/json")).toBeNull();
   });
 });
+
+describe("FtcApi throttle", () => {
+  it("spaces concurrent requests by minIntervalMs", async () => {
+    const starts: number[] = [];
+    const fetch = (async () => {
+      starts.push(Date.now());
+      return new Response("{}");
+    }) as unknown as typeof globalThis.fetch;
+    const api = new FtcApi({ user: "u", token: "t", fetch, minIntervalMs: 40 });
+    await Promise.all([api.get(2026, "a"), api.get(2026, "b"), api.get(2026, "c")]);
+    const gaps = starts.slice(1).map((t, i) => t - (starts[i] as number));
+    expect(gaps.every((g) => g >= 35)).toBe(true);
+  });
+});

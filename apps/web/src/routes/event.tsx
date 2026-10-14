@@ -1,8 +1,338 @@
+import { getSeason, isSeason, type SeasonDescriptor, seasonLabel, weekOf } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
+import { isUsRegion, regionName } from "../regions";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
-import { Av, eventStatus, heatScale, StatBox, StatusPill, TeamName, Th } from "../views/ui";
+import {
+  Av,
+  CompTh,
+  eventStatus,
+  heatScale,
+  SeasonSelect,
+  StatBox,
+  StatusPill,
+  TeamName,
+  Th,
+} from "../views/ui";
+
+// ----------------------------------------------------------------------------- event types (FTCScout-style)
+
+const KIND_LABELS: Record<string, string> = {
+  Scrimmage: "Scrimmage",
+  LeagueMeet: "League Meet",
+  Qualifier: "Qualifier",
+  LeagueTournament: "League Tournament",
+  Championship: "Championship",
+  FIRSTChampionship: "FIRST Championship",
+  SuperQualifier: "Super Qualifier",
+  Premier: "Premier",
+  NonAdvancement: "Non-Advancement",
+  Pilot: "Pilot",
+  OffSeason: "Off-Season",
+  Kickoff: "Kickoff",
+  Workshop: "Workshop",
+  DemoExhibition: "Demo / Exhibition",
+  VolunteerSignup: "Volunteer Signup",
+  PracticeDay: "Practice Day",
+  InnovationChallenge: "Innovation Challenge",
+  Other: "Other",
+};
+const COMPETITION = [
+  "Scrimmage",
+  "LeagueMeet",
+  "Qualifier",
+  "LeagueTournament",
+  "Championship",
+  "FIRSTChampionship",
+  "SuperQualifier",
+  "OffSeason",
+  "Premier",
+  "NonAdvancement",
+  "Pilot",
+];
+const OFFICIAL = [
+  "LeagueMeet",
+  "Qualifier",
+  "LeagueTournament",
+  "Championship",
+  "FIRSTChampionship",
+  "SuperQualifier",
+  "Premier",
+  "Pilot",
+];
+const NON_COMPETITION = [
+  "Kickoff",
+  "Workshop",
+  "DemoExhibition",
+  "VolunteerSignup",
+  "PracticeDay",
+  "InnovationChallenge",
+  "Other",
+];
+const TYPE_GROUPS: Record<string, { label: string; kinds: string[] | null }> = {
+  comp: { label: "Competitions", kinds: COMPETITION },
+  official: { label: "Official", kinds: OFFICIAL },
+  noncomp: { label: "Non-competition", kinds: NON_COMPETITION },
+  all: { label: "All events", kinds: null },
+};
+
+interface EventListRow {
+  code: string;
+  name: string;
+  kind: string | null;
+  type_name: string | null;
+  city: string | null;
+  state_prov: string | null;
+  country: string | null;
+  region_code: string | null;
+  remote: number;
+  date_start: string;
+  date_end: string;
+  teams: number;
+  played: number;
+}
+
+export const eventRoutes = new Hono<{ Bindings: Env }>();
+
+eventRoutes.get("/:season{[0-9]{4}}", (c) => {
+  const season = Number(c.req.param("season"));
+  if (!isSeason(season)) return c.notFound();
+  return cached(c, { ttl: 600 }, async () => {
+    const desc = getSeason(season);
+    const type = c.req.query("type") ?? "comp";
+    const region = c.req.query("region") ?? "all";
+    const format = c.req.query("format") ?? "all";
+    const q = (c.req.query("q") ?? "").trim();
+
+    const where = ["e.season = ?"];
+    const args: (string | number)[] = [season];
+    const group = TYPE_GROUPS[type];
+    const kinds = group ? group.kinds : KIND_LABELS[type] ? [type] : COMPETITION;
+    if (kinds) {
+      // Events with no type from the API count as competitions (older seasons occasionally omit it).
+      const nullOk = kinds === COMPETITION ? " OR e.kind IS NULL" : "";
+      where.push(`(e.kind IN (${kinds.map(() => "?").join(",")})${nullOk})`);
+      args.push(...kinds);
+    }
+    if (region === "US") where.push("e.region_code LIKE 'US%'");
+    else if (region === "INTL") where.push("(e.region_code IS NULL OR e.region_code NOT LIKE 'US%')");
+    else if (region !== "all") {
+      where.push("e.region_code = ?");
+      args.push(region);
+    }
+    if (format === "trad") where.push("e.remote = 0");
+    else if (format === "remote") where.push("e.remote = 1");
+    if (q) {
+      where.push("(e.name LIKE ? OR e.city LIKE ? OR e.code LIKE ?)");
+      const like = `%${q.replace(/[%_]/g, "")}%`;
+      args.push(like, like, like);
+    }
+
+    const d = db(c);
+    const [listR, regionsR] = await d.batch([
+      d
+        .prepare(
+          `SELECT e.code, e.name, e.kind, e.type_name, e.city, e.state_prov, e.country, e.region_code, e.remote,
+                  e.date_start, e.date_end,
+                  (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams,
+                  (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played
+           FROM events e WHERE ${where.join(" AND ")} ORDER BY e.date_start, e.name`,
+        )
+        .bind(...args),
+      d
+        .prepare("SELECT DISTINCT region_code FROM events WHERE season = ? AND region_code IS NOT NULL")
+        .bind(season),
+    ]);
+    const events = (listR?.results ?? []) as EventListRow[];
+    const regions = ((regionsR?.results ?? []) as { region_code: string }[])
+      .map((r) => r.region_code)
+      .sort((a, b) => regionName(a).localeCompare(regionName(b)));
+    const today = new Date().toISOString().slice(0, 10);
+    const live = events.filter((e) => eventStatus(e.date_start, e.date_end, today) === "live").length;
+
+    // Group into weeks counted from the Monday before kickoff (like FTCScout).
+    const weeks = new Map<number, EventListRow[]>();
+    for (const e of events) {
+      const w = weekOf(desc, e.date_start);
+      weeks.set(w, [...(weeks.get(w) ?? []), e]);
+    }
+    const qs = () => {
+      const p = new URLSearchParams();
+      if (type !== "comp") p.set("type", type);
+      if (region !== "all") p.set("region", region);
+      if (format !== "all") p.set("format", format);
+      if (q) p.set("q", q);
+      const s = p.toString();
+      return s ? `?${s}` : "";
+    };
+    const auto = { onchange: "this.form.submit()" } as Record<string, string>;
+    const filtered = type !== "comp" || region !== "all" || format !== "all" || !!q;
+
+    return c.html(
+      <Layout
+        title={`${seasonLabel(season)} ${desc.game} Events`}
+        description={`FTC ${desc.game} events, ${seasonLabel(season)}: schedules, results and rankings.`}
+      >
+        <h1>
+          {seasonLabel(season)} Events · {desc.game}
+        </h1>
+        <form class="filters" method="get">
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: SeasonSelect renders the select */}
+          <label>
+            Season
+            <SeasonSelect current={season} href={(s) => `/events/${s}${qs()}`} />
+          </label>
+          <label>
+            Event type
+            <select name="type" {...auto}>
+              <optgroup label="Groups">
+                {Object.entries(TYPE_GROUPS).map(([k, g]) => (
+                  <option value={k} selected={k === type}>
+                    {g.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Competition types">
+                {COMPETITION.map((k) => (
+                  <option value={k} selected={k === type}>
+                    {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Other">
+                {NON_COMPETITION.map((k) => (
+                  <option value={k} selected={k === type}>
+                    {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+          <label>
+            Region
+            <select name="region" {...auto}>
+              <option value="all" selected={region === "all"}>
+                All regions
+              </option>
+              <option value="US" selected={region === "US"}>
+                United States
+              </option>
+              <option value="INTL" selected={region === "INTL"}>
+                International
+              </option>
+              <optgroup label="United States">
+                {regions.filter(isUsRegion).map((r) => (
+                  <option value={r} selected={r === region}>
+                    {regionName(r)}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="International">
+                {regions
+                  .filter((r) => !isUsRegion(r))
+                  .map((r) => (
+                    <option value={r} selected={r === region}>
+                      {regionName(r)}
+                    </option>
+                  ))}
+              </optgroup>
+            </select>
+          </label>
+          {desc.hasRemote && (
+            <label>
+              Format
+              <select name="format" {...auto}>
+                <option value="all" selected={format === "all"}>
+                  All
+                </option>
+                <option value="trad" selected={format === "trad"}>
+                  Traditional
+                </option>
+                <option value="remote" selected={format === "remote"}>
+                  Remote
+                </option>
+              </select>
+            </label>
+          )}
+          <label>
+            Search
+            <input name="q" type="search" value={q} placeholder="Name, city or code" />
+          </label>
+          <button type="submit" class="go">
+            Filter
+          </button>
+          {filtered && <a href={`/events/${season}`}>Reset</a>}
+        </form>
+        <p class="sitestats">
+          {events.length.toLocaleString("en-US")} event{events.length === 1 ? "" : "s"}
+          {live > 0 && ` · ${live} live now`} · weeks counted from kickoff ({desc.kickoff}) · click a column
+          to sort within each week
+        </p>
+        {events.length === 0 ? (
+          <p class="note">No events match these filters.</p>
+        ) : (
+          <div class="scroll">
+            <table class="st" style="width:100%">
+              <thead>
+                <tr>
+                  <th class="l">Dates</th>
+                  <th class="l">Event</th>
+                  <th class="l">Type</th>
+                  <th class="l">Location</th>
+                  <th>Teams</th>
+                  <th title="Matches with results">Played</th>
+                  <th class="l">Status</th>
+                </tr>
+              </thead>
+              {[...weeks].map(([w, es]) => (
+                <tbody>
+                  <tr class="wkh">
+                    <th colspan={7}>
+                      {w < 1 ? "Preseason" : `Week ${w}`}
+                      <span>
+                        {weekRange(desc, w)} · {es.length} event{es.length === 1 ? "" : "s"}
+                      </span>
+                    </th>
+                  </tr>
+                  {es.map((e) => (
+                    <tr>
+                      <td class="l" data-v={e.date_start}>
+                        {fmtDateRange(e.date_start, e.date_end)}
+                      </td>
+                      <td class="l">
+                        <a href={`/events/${season}/${e.code}`}>{e.name}</a>{" "}
+                        {e.remote ? <span class="pill">remote</span> : ""}
+                      </td>
+                      <td class="l">{(e.kind && KIND_LABELS[e.kind]) ?? e.type_name}</td>
+                      <td class="l">{[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}</td>
+                      <td>{e.teams || ""}</td>
+                      <td>{e.played || ""}</td>
+                      <td class="l">
+                        <StatusPill s={eventStatus(e.date_start, e.date_end, today)} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
+            </table>
+          </div>
+        )}
+      </Layout>,
+    );
+  });
+});
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function weekRange(desc: SeasonDescriptor, w: number) {
+  const start = new Date(Date.parse(`${desc.kickoff}T00:00:00Z`));
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7) + (w - 1) * 7);
+  const end = new Date(start.getTime() + 6 * 86_400_000);
+  const f = (d: Date) => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  return `${f(start)} – ${f(end)}`;
+}
+
+// ----------------------------------------------------------------------------- event page
 
 interface EventRow {
   season: number;
@@ -18,6 +348,7 @@ interface EventRow {
   region_code: string | null;
   league_code: string | null;
   live_stream_url: string | null;
+  remote: number;
 }
 
 interface MatchRow {
@@ -36,71 +367,12 @@ interface MatchRow {
 
 type Stat = Record<string, number | null> & { team: number; name_short: string | null; av: string | null };
 
-export const eventRoutes = new Hono<{ Bindings: Env }>();
-
-eventRoutes.get("/:season{[0-9]{4}}", (c) =>
-  cached(c, { ttl: 600 }, async () => {
-    const season = Number(c.req.param("season"));
-    const { results } = await db(c)
-      .prepare(
-        `SELECT e.code, e.name, e.type_name, e.city, e.state_prov, e.country, e.date_start, e.date_end,
-                (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams,
-                (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played
-         FROM events e WHERE e.season = ? ORDER BY e.date_start, e.name`,
-      )
-      .bind(season)
-      .all<EventRow & { teams: number; played: number }>();
-    const today = new Date().toISOString().slice(0, 10);
-    const live = results.filter((e) => eventStatus(e.date_start, e.date_end, today) === "live").length;
-    return c.html(
-      <Layout title={`${season} Events`}>
-        <h1>
-          {season}–{String(season + 1).slice(2)} Events
-        </h1>
-        <p class="sitestats">
-          {results.length.toLocaleString("en-US")} events · {live} live now · click a column to sort
-        </p>
-        <Table>
-          <thead>
-            <tr>
-              <th class="l">Dates</th>
-              <th class="l">Event</th>
-              <th class="l">Type</th>
-              <th class="l">Location</th>
-              <th>Teams</th>
-              <th title="Matches with results">Played</th>
-              <th class="l">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((e) => (
-              <tr>
-                <td class="l" data-v={e.date_start}>
-                  {fmtDateRange(e.date_start, e.date_end)}
-                </td>
-                <td class="l">
-                  <a href={`/events/${season}/${e.code}`}>{e.name}</a>
-                </td>
-                <td class="l">{e.type_name}</td>
-                <td class="l">{[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}</td>
-                <td>{e.teams || ""}</td>
-                <td>{e.played || ""}</td>
-                <td class="l">
-                  <StatusPill s={eventStatus(e.date_start, e.date_end, today)} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      </Layout>,
-    );
-  }),
-);
-
 eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
   const season = Number(c.req.param("season"));
+  if (!isSeason(season)) return c.notFound();
   const code = c.req.param("code").toUpperCase();
   return cached(c, { versions: [`event:${season}:${code}`], ttl: VERSIONED_TTL }, async () => {
+    const desc = getSeason(season);
     const d = db(c);
     const [evR, rankR, matchR, statR, allyR, awardR, teamsR] = await d.batch([
       d.prepare("SELECT * FROM events WHERE season = ? AND code = ?").bind(season, code),
@@ -109,7 +381,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
           `SELECT r.*, t.name_short, s.opr_np, av.key AS av FROM rankings r
            LEFT JOIN teams t ON t.number = r.team
            LEFT JOIN team_avatars av ON av.team = r.team
-           LEFT JOIN s2026_team_event_stats s ON s.event_code = r.event_code AND s.team = r.team
+           LEFT JOIN team_event_stats s ON s.season = r.season AND s.event_code = r.event_code AND s.team = r.team
            WHERE r.season = ? AND r.event_code = ? ORDER BY r.rank`,
         )
         .bind(season, code),
@@ -124,12 +396,12 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         .bind(season, code),
       d
         .prepare(
-          `SELECT s.*, t.name_short, av.key AS av FROM s2026_team_event_stats s
+          `SELECT s.*, t.name_short, av.key AS av FROM team_event_stats s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
-           WHERE s.event_code = ? ORDER BY s.opr_np DESC`,
+           WHERE s.season = ? AND s.event_code = ? ORDER BY s.opr_np DESC`,
         )
-        .bind(code),
+        .bind(season, code),
       d
         .prepare("SELECT * FROM alliances WHERE season = ? AND event_code = ? ORDER BY number")
         .bind(season, code),
@@ -155,10 +427,14 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       return c.html(
         <Layout title="Event not found">
           <h1>Event {code} not found</h1>
+          <p class="note">
+            <a href={`/events/${season}`}>Browse {seasonLabel(season)} events</a>
+          </p>
         </Layout>,
         404,
       );
     }
+    const remote = !!ev.remote;
 
     type Rank = {
       team: number;
@@ -174,17 +450,17 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       sort3: number;
       opr_np: number | null;
     };
-    const ranks = rankR?.results as Rank[];
-    const matches = matchR?.results as MatchRow[];
-    const stats = statR?.results as unknown as Stat[];
-    const allys = allyR?.results as {
+    const ranks = (rankR?.results ?? []) as Rank[];
+    const matches = (matchR?.results ?? []) as MatchRow[];
+    const stats = (statR?.results ?? []) as unknown as Stat[];
+    const allys = (allyR?.results ?? []) as {
       number: number;
       captain: number | null;
       pick1: number | null;
       pick2: number | null;
       backup: number | null;
     }[];
-    const awards = awardR?.results as {
+    const awards = (awardR?.results ?? []) as {
       name: string;
       team: number;
       name_short: string | null;
@@ -202,45 +478,57 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
     for (const m of played) {
       for (const np of [m.red_np, m.blue_np]) if (np != null && (!high || np > high.np)) high = { np, m };
     }
-    const qualNps = played
+    const nps = played
       .filter((m) => m.level === "Q")
       .flatMap((m) => [m.red_np, m.blue_np])
       .filter((x): x is number => x != null);
-    const avgNp = qualNps.length ? qualNps.reduce((a, b) => a + b, 0) / qualNps.length : null;
+    const avgNp = nps.length ? nps.reduce((a, b) => a + b, 0) / nps.length : null;
     const status = eventStatus(ev.date_start, ev.date_end);
 
     const rankHeat = heatScale(ranks.map((r) => r.opr_np));
-    const col = (k: string, invert = false) =>
-      heatScale(
-        stats.map((s) => s[k]),
-        invert,
-      );
-    const H = {
-      np: col("opr_np"),
-      auto: col("opr_auto"),
-      teleop: col("opr_teleop"),
-      tips: col("opr_tips"),
-      hive: col("opr_hive"),
-      flower: col("opr_flower"),
-      garden: col("opr_garden"),
-      park: col("opr_park"),
-      dpr: col("dpr", true),
-      ccwm: col("ccwm"),
-      avg: col("avg_np"),
-      max: col("max_np"),
-      rp: col("rp_avg"),
-    };
+    type Col = { k: string; head: unknown; fmt: (x: number | null) => string | number; invert?: boolean };
+    const statCols: Col[] = [
+      { k: "opr_np", head: <Th k="NP OPR" label={remote ? "Avg NP" : "NP OPR"} />, fmt: f1 },
+      { k: "opr_auto", head: <Th k="Auto" />, fmt: f1 },
+      { k: "opr_teleop", head: <Th k="TeleOp" />, fmt: f1 },
+      { k: "opr_endgame", head: <Th k="Endgame" />, fmt: f1 },
+      ...desc.components.map((comp) => ({
+        k: `opr_${comp.key}`,
+        head: <CompTh c={comp} />,
+        fmt: comp.count ? f2 : f1,
+      })),
+      ...(remote
+        ? []
+        : [
+            { k: "dpr", head: <Th k="DPR" />, fmt: f1, invert: true },
+            { k: "ccwm", head: <Th k="CCWM" />, fmt: f1 },
+          ]),
+      { k: "avg_np", head: <Th k="Avg NP" />, fmt: f1 },
+      { k: "max_np", head: <Th k="Max NP" />, fmt: (x) => x ?? "" },
+    ];
+    const heats = Object.fromEntries(
+      statCols.map((s) => [
+        s.k,
+        heatScale(
+          stats.map((x) => x[s.k]),
+          s.invert,
+        ),
+      ]),
+    );
 
     return c.html(
       <Layout
-        title={`${ev.name} (${season})`}
-        description={`Rankings, match results and OPR for ${ev.name}.`}
+        title={`${ev.name} (${seasonLabel(season)})`}
+        description={`Rankings, match results and OPR for ${ev.name}, ${seasonLabel(season)} ${desc.game}.`}
       >
         <div class="crumbs">
-          <a href={`/events/${season}`}>{season} Events</a> › {code}
+          <a href={`/events/${season}`}>
+            {seasonLabel(season)} {desc.game}
+          </a>{" "}
+          › {code}
         </div>
         <h1>
-          {ev.name} <StatusPill s={status} />
+          {ev.name} <StatusPill s={status} /> {remote && <span class="pill">remote</span>}
         </h1>
         <div class="bio">
           <div>
@@ -252,6 +540,11 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
           <div>
             <b>Location:</b> {[ev.venue, ev.city, ev.state_prov, ev.country].filter(Boolean).join(", ")}
           </div>
+          {ev.region_code && (
+            <div>
+              <b>Region:</b> {regionName(ev.region_code)}
+            </div>
+          )}
           {ev.league_code && (
             <div>
               <b>League:</b> {ev.region_code}-{ev.league_code}
@@ -270,28 +563,29 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
           <StatBox label="Teams" value={roster.size || ranks.length || "–"} />
           <StatBox label="Matches" value={played.length} sub={`of ${matches.length} scheduled`} />
           <StatBox
-            label="High score (NP)"
+            label={remote ? "High score" : "High score (NP)"}
             value={high ? high.np : "–"}
             sub={
               high && (
                 <a
                   href={`/events/${season}/${code}/${matchSlug(high.m.level, high.m.series, high.m.match_number)}`}
                 >
-                  {matchLabel(high.m.level, high.m.series, high.m.match_number)}
+                  {remote ? `${high.m.series} ` : ""}
+                  {matchLabel(high.m.level, remote ? 0 : high.m.series, high.m.match_number)}
                 </a>
               )
             }
           />
           <StatBox
-            label="Avg qual NP"
+            label={remote ? "Avg score" : "Avg qual NP"}
             value={avgNp == null ? "–" : avgNp.toFixed(1)}
-            tip="Average alliance no-penalty score in qualification matches"
+            tip="Average no-penalty score in qualification matches"
           />
           {stats[0] && (
             <StatBox
-              label="Top NP OPR"
+              label={remote ? "Top average" : "Top NP OPR"}
               value={f1(stats[0].opr_np)}
-              sub={<a href={`/teams/${stats[0].team}`}>{stats[0].team}</a>}
+              sub={<a href={`/teams/${stats[0].team}?season=${season}`}>{stats[0].team}</a>}
             />
           )}
         </div>
@@ -299,7 +593,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
           <a href="#rankings">Rankings</a>
           <a href="#matches">Matches</a>
           <a href="#stats">Team Stats</a>
-          <a href="#alliances">Alliances</a>
+          {!remote && <a href="#alliances">Alliances</a>}
           <a href="#awards">Awards</a>
         </div>
 
@@ -313,12 +607,12 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                 <Th k="Rk" />
                 <th>Team</th>
                 <th class="l">Name</th>
-                <Th k="W-L-T" />
+                {!remote && <Th k="W-L-T" />}
                 <Th k="RS" />
                 <Th k="TB1" />
                 <Th k="TB2" />
                 <Th k="Pl" />
-                <Th k="NP OPR" />
+                <Th k="NP OPR" label={remote ? "Avg NP" : "NP OPR"} />
               </tr>
             </thead>
             <tbody>
@@ -326,12 +620,12 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                 <tr>
                   <td>{r.rank}</td>
                   <td>
-                    <a href={`/teams/${r.team}`}>{r.team}</a>
+                    <a href={`/teams/${r.team}?season=${season}`}>{r.team}</a>
                   </td>
                   <td class="l">
                     <TeamName team={r.team} name={r.name_short} av={r.av} />
                   </td>
-                  <td data-v={r.wins + r.ties / 2}>{wlt(r.wins, r.losses, r.ties)}</td>
+                  {!remote && <td data-v={r.wins + r.ties / 2}>{wlt(r.wins, r.losses, r.ties)}</td>}
                   <td>{f2(r.sort1)}</td>
                   <td>{f2(r.sort2)}</td>
                   <td>{f2(r.sort3)}</td>
@@ -348,6 +642,8 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         <h2 id="matches">Matches</h2>
         {matches.length === 0 ? (
           <p class="note">Schedule not published yet.</p>
+        ) : remote ? (
+          <RemoteMatchTable season={season} code={code} matches={matches} roster={roster} />
         ) : (
           <MatchTable season={season} code={code} matches={matches} />
         )}
@@ -358,6 +654,9 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         ) : (
           <>
             <p class="note">
+              {remote
+                ? "Remote event: each team plays alone, so these are per-team averages."
+                : "OPR = points a team adds per match (least-squares over qualification matches)."}{" "}
               Shaded cells are above the event median; darker is better. Hover a header for its definition.
             </p>
             <Table>
@@ -365,71 +664,25 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                 <tr>
                   <th>Team</th>
                   <th class="l">Name</th>
-                  <Th k="W-L-T" />
-                  <Th k="NP OPR" />
-                  <Th k="Auto" />
-                  <Th k="TeleOp" />
-                  <Th k="Tips" />
-                  <Th k="Hive" />
-                  <Th k="Flower" />
-                  <Th k="Garden" />
-                  <Th k="Park" />
-                  <Th k="DPR" />
-                  <Th k="CCWM" />
-                  <Th k="Avg NP" />
-                  <Th k="Max NP" />
-                  <Th k="RP/M" />
+                  {!remote && <Th k="W-L-T" />}
+                  {statCols.map((s) => s.head)}
                 </tr>
               </thead>
               <tbody>
                 {stats.map((s) => (
                   <tr>
                     <td>
-                      <a href={`/teams/${s.team}`}>{s.team}</a>
+                      <a href={`/teams/${s.team}?season=${season}`}>{s.team}</a>
                     </td>
                     <td class="l">
                       <TeamName team={s.team} name={s.name_short} av={s.av} />
                     </td>
-                    <td data-v={s.wins}>{wlt(s.wins ?? 0, s.losses ?? 0, s.ties ?? 0)}</td>
-                    <td class="ht w" style={H.np(s.opr_np)}>
-                      {f1(s.opr_np)}
-                    </td>
-                    <td class="ht" style={H.auto(s.opr_auto)}>
-                      {f1(s.opr_auto)}
-                    </td>
-                    <td class="ht" style={H.teleop(s.opr_teleop)}>
-                      {f1(s.opr_teleop)}
-                    </td>
-                    <td class="ht" style={H.tips(s.opr_tips)}>
-                      {f2(s.opr_tips)}
-                    </td>
-                    <td class="ht" style={H.hive(s.opr_hive)}>
-                      {f1(s.opr_hive)}
-                    </td>
-                    <td class="ht" style={H.flower(s.opr_flower)}>
-                      {f1(s.opr_flower)}
-                    </td>
-                    <td class="ht" style={H.garden(s.opr_garden)}>
-                      {f1(s.opr_garden)}
-                    </td>
-                    <td class="ht" style={H.park(s.opr_park)}>
-                      {f1(s.opr_park)}
-                    </td>
-                    <td class="ht" style={H.dpr(s.dpr)}>
-                      {f1(s.dpr)}
-                    </td>
-                    <td class="ht" style={H.ccwm(s.ccwm)}>
-                      {f1(s.ccwm)}
-                    </td>
-                    <td class="ht" style={H.avg(s.avg_np)}>
-                      {f1(s.avg_np)}
-                    </td>
-                    <td class="ht" style={H.max(s.max_np)}>
-                      {s.max_np}
-                    </td>
-                    <td class="ht" style={H.rp(s.rp_avg)}>
-                      {f2(s.rp_avg)}
-                    </td>
+                    {!remote && <td data-v={s.wins}>{wlt(s.wins ?? 0, s.losses ?? 0, s.ties ?? 0)}</td>}
+                    {statCols.map((col) => (
+                      <td class={`ht${col.k === "opr_np" ? " w" : ""}`} style={heats[col.k]?.(s[col.k])}>
+                        {col.fmt(s[col.k] ?? null)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -437,41 +690,45 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
           </>
         )}
 
-        <h2 id="alliances">Alliances</h2>
-        {allys.length === 0 ? (
-          <p class="note">Alliance selection has not happened yet.</p>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th class="l">Captain</th>
-                <th class="l">Pick 1</th>
-                <th class="l">Pick 2</th>
-                <th class="l">Backup</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allys.map((a) => (
-                <tr>
-                  <td>{a.number}</td>
-                  {[a.captain, a.pick1, a.pick2, a.backup].map((t) => (
-                    <td class="l">
-                      {t ? (
-                        <>
-                          <Av team={t} k={roster.get(t)?.av} />
-                          <a href={`/teams/${t}`}>{t}</a>{" "}
-                          <span class="note">{roster.get(t)?.name_short}</span>
-                        </>
-                      ) : (
-                        ""
-                      )}
-                    </td>
+        {!remote && (
+          <>
+            <h2 id="alliances">Alliances</h2>
+            {allys.length === 0 ? (
+              <p class="note">Alliance selection has not happened yet.</p>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th class="l">Captain</th>
+                    <th class="l">Pick 1</th>
+                    <th class="l">Pick 2</th>
+                    <th class="l">Backup</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allys.map((a) => (
+                    <tr>
+                      <td>{a.number}</td>
+                      {[a.captain, a.pick1, a.pick2, a.backup].map((t) => (
+                        <td class="l">
+                          {t ? (
+                            <>
+                              <Av team={t} k={roster.get(t)?.av} />
+                              <a href={`/teams/${t}?season=${season}`}>{t}</a>{" "}
+                              <span class="note">{roster.get(t)?.name_short}</span>
+                            </>
+                          ) : (
+                            ""
+                          )}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+                </tbody>
+              </Table>
+            )}
+          </>
         )}
 
         <h2 id="awards">Awards</h2>
@@ -490,7 +747,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
               {awards.map((a) => (
                 <tr>
                   <td class="l">{a.name}</td>
-                  <td>{a.team ? <a href={`/teams/${a.team}`}>{a.team}</a> : ""}</td>
+                  <td>{a.team ? <a href={`/teams/${a.team}?season=${season}`}>{a.team}</a> : ""}</td>
                   <td class="l">
                     {a.person_name ??
                       (a.team ? <TeamName team={a.team} name={a.name_short} av={a.av} /> : "")}
@@ -513,6 +770,13 @@ function MatchTable(props: { season: number; code: string; matches: MatchRow[] }
       .sort()
       .map((s) => Number(s.split(":")[1]));
   const npHeat = heatScale(props.matches.flatMap((m) => [m.red_np, m.blue_np]));
+  const links = (ts: number[]) =>
+    ts.map((t, i) => (
+      <>
+        {i > 0 && " "}
+        <a href={`/teams/${t}?season=${props.season}`}>{t}</a>
+      </>
+    ));
   return (
     <Table>
       <thead>
@@ -527,36 +791,77 @@ function MatchTable(props: { season: number; code: string; matches: MatchRow[] }
         </tr>
       </thead>
       <tbody>
-        {props.matches.map((m) => {
-          const teamLinks = (ts: number[]) =>
-            ts.map((t, i) => (
-              <>
-                {i > 0 && " "}
-                <a href={`/teams/${t}`}>{t}</a>
-              </>
-            ));
-          return (
-            <tr>
-              <td class="l" data-v={(m.level === "Q" ? 0 : 1000) + m.series * 10 + m.match_number}>
-                <a
-                  href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
-                >
-                  {matchLabel(m.level, m.series, m.match_number)}
-                </a>
-              </td>
-              <td class="l r">{teamLinks(side(m.teams ?? "", "Red"))}</td>
-              <td class="l b">{teamLinks(side(m.teams ?? "", "Blue"))}</td>
-              <td class={`r${m.winner === "R" ? " w" : ""}`}>{m.played ? m.red_score : ""}</td>
-              <td class={`b${m.winner === "B" ? " w" : ""}`}>{m.played ? m.blue_score : ""}</td>
-              <td class="ht" style={npHeat(m.red_np)}>
-                {m.red_np ?? ""}
-              </td>
-              <td class="ht" style={npHeat(m.blue_np)}>
-                {m.blue_np ?? ""}
-              </td>
-            </tr>
-          );
-        })}
+        {props.matches.map((m) => (
+          <tr>
+            <td class="l" data-v={(m.level === "Q" ? 0 : 1000) + m.series * 10 + m.match_number}>
+              <a
+                href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
+              >
+                {matchLabel(m.level, m.series, m.match_number)}
+              </a>
+            </td>
+            <td class="l r">{links(side(m.teams ?? "", "Red"))}</td>
+            <td class="l b">{links(side(m.teams ?? "", "Blue"))}</td>
+            <td class={`r${m.winner === "R" ? " w" : ""}`}>{m.played ? m.red_score : ""}</td>
+            <td class={`b${m.winner === "B" ? " w" : ""}`}>{m.played ? m.blue_score : ""}</td>
+            <td class="ht" style={npHeat(m.red_np)}>
+              {m.red_np ?? ""}
+            </td>
+            <td class="ht" style={npHeat(m.blue_np)}>
+              {m.blue_np ?? ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  );
+}
+
+/** Remote events: every team plays its own matches; `series` holds the team number. */
+function RemoteMatchTable(props: {
+  season: number;
+  code: string;
+  matches: MatchRow[];
+  roster: Map<number, { name_short: string | null; av: string | null }>;
+}) {
+  const heat = heatScale(props.matches.map((m) => m.red_np));
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <th>Team</th>
+          <th class="l">Name</th>
+          <th class="l">Match</th>
+          <th>Score</th>
+          <th title="Score before penalty deductions">NP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.matches.map((m) => (
+          <tr>
+            <td>
+              <a href={`/teams/${m.series}?season=${props.season}`}>{m.series}</a>
+            </td>
+            <td class="l">
+              <TeamName
+                team={m.series}
+                name={props.roster.get(m.series)?.name_short}
+                av={props.roster.get(m.series)?.av}
+              />
+            </td>
+            <td class="l" data-v={m.match_number}>
+              <a
+                href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
+              >
+                {matchLabel(m.level, 0, m.match_number)}
+              </a>
+            </td>
+            <td>{m.played ? m.red_score : ""}</td>
+            <td class="ht" style={heat(m.red_np)}>
+              {m.red_np ?? ""}
+            </td>
+          </tr>
+        ))}
       </tbody>
     </Table>
   );

@@ -4,6 +4,8 @@ export interface Env {
   RAW?: R2Bucket;
   CACHE_VER: KVNamespace;
   SYNC_QUEUE: Queue<SyncMessage>;
+  /** Throttled queue for historical backfills, so live polling never waits behind them. */
+  BACKFILL_QUEUE: Queue<SyncMessage>;
   FTC_API_USER: string;
   FTC_API_TOKEN: string;
   ADMIN_TOKEN: string;
@@ -13,7 +15,7 @@ export interface Env {
 
 export type SyncMessage =
   | { job: "events"; season: number }
-  | { job: "teams"; season: number; page: number }
+  | { job: "teams"; season: number; page: number; force?: boolean }
   | { job: "eventMatches"; season: number; code: string; force?: boolean }
   | { job: "awards"; season: number; code: string; force?: boolean }
   | { job: "leagues"; season: number }

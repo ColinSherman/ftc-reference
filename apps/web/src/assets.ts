@@ -75,18 +75,27 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .stk{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
 .stk .col{display:flex;flex-direction:column-reverse;align-items:center;gap:2px;min-height:60px;justify-content:flex-start;padding:3px 6px;border-bottom:3px solid var(--line)}
 .ball{width:13px;height:13px;border-radius:50%;display:block}.ball.R{background:var(--red)}.ball.B{background:var(--blue)}.ball.P{background:var(--pollen);width:10px;height:10px}
+.wkh th{background:var(--bg);border-top:0;text-align:left;font:15px Georgia,serif;padding:14px 4px 3px;cursor:default;position:static;border-bottom:2px solid var(--rule)}
+.wkh th span{font:11px Verdana,sans-serif;color:var(--muted);margin-left:8px}
+.filters{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:end;margin:6px 0 4px;padding:8px 10px;background:var(--zebra);border:1px solid var(--line)}
+.filters label{display:flex;flex-direction:column;font-size:11px;color:var(--muted);gap:2px}
+.filters select,.filters input{font:12px Verdana,sans-serif;padding:2px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:2px}
+.filters input{width:180px}.filters .go{font:12px Verdana,sans-serif}
+.ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
 @media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}}
 `.replace(/\n/g, "");
 
 /** Click-to-sort for every table.st. Numbers sort descending first (stats convention). */
 export const SORT_JS =
-  `document.addEventListener("click",function(e){var h=e.target.closest(".st th");if(!h)return;
-var t=h.closest("table"),b=t.tBodies[0];if(!b)return;var i=[].indexOf.call(h.parentNode.children,h);
+  `document.addEventListener("click",function(e){var h=e.target.closest(".st thead th");if(!h)return;
+var t=h.closest("table");var i=[].indexOf.call(h.parentNode.children,h);
 var asc=h.dataset.dir==="desc";[].forEach.call(h.parentNode.children,function(x){delete x.dataset.dir});h.dataset.dir=asc?"asc":"desc";
 var v=function(r){var c=r.children[i];if(!c)return"";var s=c.dataset.v!=null?c.dataset.v:c.textContent.trim();var n=parseFloat(s.replace(/,/g,""));return isNaN(n)?s.toLowerCase():n};
-var rows=[].slice.call(b.rows).sort(function(a,c){var x=v(a),y=v(c);if(x===y)return 0;var r=typeof x==="number"&&typeof y==="number"?x-y:String(x)<String(y)?-1:1;return asc?r:-r});
-rows.forEach(function(r){b.appendChild(r)})});`.replace(/\n/g, "");
+[].forEach.call(t.tBodies,function(b){var rows=[].filter.call(b.rows,function(r){return !r.classList.contains("wkh")});
+rows.sort(function(a,c){var x=v(a),y=v(c);if(x===y)return 0;var r=typeof x==="number"&&typeof y==="number"?x-y:String(x)<String(y)?-1:1;return asc?r:-r});
+rows.forEach(function(r){b.appendChild(r)})})});`.replace(/\n/g, "");
 
 /** Orange pennant. Inlined as a data URI in <head>; also served at /favicon.svg. */
 export const FAVICON_SVG =

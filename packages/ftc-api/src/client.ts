@@ -21,6 +21,8 @@ export interface FtcApiOptions {
   fetch?: typeof fetch;
   /** Override for local mocks; defaults to the official API. */
   baseUrl?: string;
+  /** Minimum gap between requests from this client (politeness for bulk backfills). */
+  minIntervalMs?: number;
   /** Max attempts for 429 / 5xx / network errors. */
   attempts?: number;
   baseDelayMs?: number;
@@ -32,6 +34,9 @@ export class FtcApi {
   private readonly attempts: number;
   private readonly baseDelayMs: number;
   private readonly baseUrl: string;
+  private readonly minIntervalMs: number;
+  private lastRequestAt = 0;
+  private gate: Promise<void> = Promise.resolve();
   /** Requests issued (including retries) — surfaced in sync_runs. */
   requests = 0;
   notModified = 0;
@@ -42,6 +47,22 @@ export class FtcApi {
     this.attempts = opts.attempts ?? 3;
     this.baseDelayMs = opts.baseDelayMs ?? 500;
     this.baseUrl = opts.baseUrl ?? FTC_API_BASE;
+    this.minIntervalMs = opts.minIntervalMs ?? 0;
+  }
+
+  /** Serialises request starts so concurrent callers still respect minIntervalMs. */
+  private async throttle() {
+    if (!this.minIntervalMs) return;
+    const prev = this.gate;
+    let release = () => {};
+    this.gate = new Promise((r) => {
+      release = r;
+    });
+    await prev;
+    const wait = this.lastRequestAt + this.minIntervalMs - Date.now();
+    if (wait > 0) await sleep(wait);
+    this.lastRequestAt = Date.now();
+    release();
   }
 
   /**
@@ -56,6 +77,7 @@ export class FtcApi {
     let lastErr: unknown;
     for (let attempt = 0; attempt < this.attempts; attempt++) {
       if (attempt > 0) await sleep(this.baseDelayMs * 2 ** (attempt - 1));
+      await this.throttle();
       this.requests++;
       let res: Response;
       try {

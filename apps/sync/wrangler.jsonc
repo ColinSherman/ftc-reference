@@ -25,7 +25,10 @@
   "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }],
 
   "queues": {
-    "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-sync-jobs" }],
+    "producers": [
+      { "binding": "SYNC_QUEUE", "queue": "ftcref-sync-jobs" },
+      { "binding": "BACKFILL_QUEUE", "queue": "ftcref-backfill" }
+    ],
     "consumers": [
       {
         "queue": "ftcref-sync-jobs",
@@ -34,6 +37,15 @@
         // Keeps us polite to the FTC API: at most ~4 jobs in flight account-wide.
         "max_concurrency": 4,
         "max_retries": 5,
+        "dead_letter_queue": "ftcref-sync-dlq"
+      },
+      {
+        // Historical seasons: two consumers × ≤4 req/s each (throttled in code).
+        "queue": "ftcref-backfill",
+        "max_batch_size": 4,
+        "max_batch_timeout": 5,
+        "max_concurrency": 2,
+        "max_retries": 4,
         "dead_letter_queue": "ftcref-sync-dlq"
       }
     ]

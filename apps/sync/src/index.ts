@@ -1,6 +1,7 @@
 import { nowIso } from "@ftcref/db";
 import { FtcApi } from "@ftcref/ftc-api";
-import { CURRENT_SEASON } from "@ftcref/seasons";
+import { CURRENT_SEASON, isSeason } from "@ftcref/seasons";
+import { advanceBackfill } from "./backfill";
 import type { Env, SyncMessage } from "./env";
 import { fetchAvatarBatch, syncAvatars } from "./jobs/avatars";
 import { syncAwards } from "./jobs/awards";
@@ -13,35 +14,50 @@ import { planLive, recentEvents } from "./planner";
 const season = CURRENT_SEASON;
 /** The v3 API and avatar files number seasons by Championship year (BIOBUZZ 2026-27 → 2027). */
 const cmpYear = season + 1;
+const BACKFILL_QUEUE_NAME = "ftcref-backfill";
+/** Backfill politeness: ≤ 4 requests/s per consumer (2 consumers max). Live polling is unthrottled. */
+const BACKFILL_INTERVAL_MS = 250;
 
 /** Queues caps sendBatch at 100 messages and 256 KB; split on whichever comes first. */
-async function enqueue(env: Env, msgs: SyncMessage[]) {
+async function send(queue: Queue<SyncMessage>, msgs: SyncMessage[]) {
   let batch: { body: SyncMessage }[] = [];
   let bytes = 0;
   for (const body of msgs) {
     const size = JSON.stringify(body).length + 100; // + per-message overhead
     if (batch.length && (batch.length === 100 || bytes + size > 200_000)) {
-      await env.SYNC_QUEUE.sendBatch(batch);
+      await queue.sendBatch(batch);
       batch = [];
       bytes = 0;
     }
     batch.push({ body });
     bytes += size;
   }
-  if (batch.length) await env.SYNC_QUEUE.sendBatch(batch);
+  if (batch.length) await queue.sendBatch(batch);
 }
 
-async function runJob(env: Env, msg: SyncMessage) {
-  const api = new FtcApi({ user: env.FTC_API_USER, token: env.FTC_API_TOKEN, baseUrl: env.FTC_API_BASE });
+const enqueue = (env: Env, msgs: SyncMessage[]) => send(env.SYNC_QUEUE, msgs);
+const enqueueBulk = (env: Env, msgs: SyncMessage[]) => send(env.BACKFILL_QUEUE, msgs);
+
+/** Log target; backfill jobs are prefixed "~" so the backfill machine can tell them from live polling. */
+function targetOf(msg: SyncMessage, bulk: boolean) {
+  const p = bulk ? "~" : "";
+  if ("code" in msg && "season" in msg) return `${p}${msg.season}/${msg.code}`;
+  if ("page" in msg) return `${p}${msg.season}/teams:${msg.page}`;
+  if ("refs" in msg) return `${msg.refs.length} avatars`;
+  if ("season" in msg) return `${p}${msg.season}`;
+  return null;
+}
+
+/** Run one job. `again` re-enqueues fan-out work on the same queue the job came from. */
+async function runJob(env: Env, msg: SyncMessage, bulk: boolean) {
+  const api = new FtcApi({
+    user: env.FTC_API_USER,
+    token: env.FTC_API_TOKEN,
+    baseUrl: env.FTC_API_BASE,
+    minIntervalMs: bulk ? BACKFILL_INTERVAL_MS : 0,
+  });
+  const again = (m: SyncMessage[]) => (bulk ? enqueueBulk(env, m) : enqueue(env, m));
   const started = Date.now();
-  const target =
-    "code" in msg
-      ? msg.code
-      : "page" in msg
-        ? String(msg.page)
-        : "refs" in msg
-          ? `${msg.refs.length} avatars`
-          : null;
   let rows = 0;
   let error: string | null = null;
   try {
@@ -50,15 +66,12 @@ async function runJob(env: Env, msg: SyncMessage) {
         rows = await syncEvents(env, api, msg.season);
         break;
       case "teams": {
-        const r = await syncTeamsPage(env, api, msg.season, msg.page);
+        const r = await syncTeamsPage(env, api, msg.season, msg.page, msg.force);
         rows = r.written;
-        // Page 1 fans out the remaining pages so the queue fetches them in parallel.
+        // Page 1 fans out the remaining pages.
         if (msg.page === 1 && r.pageTotal && r.pageTotal > 1) {
           const rest = Array.from({ length: r.pageTotal - 1 }, (_, i) => i + 2);
-          await enqueue(
-            env,
-            rest.map((page) => ({ job: "teams", season: msg.season, page })),
-          );
+          await again(rest.map((page) => ({ job: "teams", season: msg.season, page, force: msg.force })));
         }
         break;
       }
@@ -71,10 +84,7 @@ async function runJob(env: Env, msg: SyncMessage) {
       case "leagues": {
         const leagues = await syncLeagues(env, api, msg.season);
         rows = leagues.length;
-        await enqueue(
-          env,
-          leagues.map((l) => ({ job: "leagueMembers", season: msg.season, ...l })),
-        );
+        await again(leagues.map((l) => ({ job: "leagueMembers", season: msg.season, ...l })));
         break;
       }
       case "leagueMembers":
@@ -97,7 +107,7 @@ async function runJob(env: Env, msg: SyncMessage) {
       .bind(
         new Date(started).toISOString(),
         msg.job,
-        target,
+        targetOf(msg, bulk),
         api.requests,
         api.notModified,
         rows,
@@ -106,32 +116,6 @@ async function runJob(env: Env, msg: SyncMessage) {
       )
       .run();
   }
-}
-
-async function backfill(env: Env, step: string | null) {
-  if (step === "matches") {
-    const today = new Date().toISOString().slice(0, 10);
-    const { results } = await env.DB.prepare(
-      "SELECT code FROM events WHERE season = ? AND substr(date_start, 1, 10) <= ?",
-    )
-      .bind(season, today)
-      .all<{ code: string }>();
-    await enqueue(
-      env,
-      results.flatMap(({ code }): SyncMessage[] => [
-        { job: "eventMatches", season, code, force: true },
-        { job: "awards", season, code, force: true },
-      ]),
-    );
-    return { enqueued: results.length };
-  }
-  await enqueue(env, [
-    { job: "events", season },
-    { job: "teams", season, page: 1 },
-    { job: "leagues", season },
-    { job: "avatars", cmpYear },
-  ]);
-  return { enqueued: ["events", "teams", "leagues", "avatars"], next: "POST /admin/backfill?step=matches" };
 }
 
 export default {
@@ -145,6 +129,8 @@ export default {
           .first();
         if (!av) msgs.push({ job: "avatars", cmpYear });
         await enqueue(env, msgs);
+        const step = await advanceBackfill(env, (m) => enqueueBulk(env, m));
+        if (step) console.log("backfill", step);
         break;
       }
       case "0 */6 * * *":
@@ -175,9 +161,10 @@ export default {
   },
 
   async queue(batch, env) {
+    const bulk = batch.queue === BACKFILL_QUEUE_NAME;
     for (const m of batch.messages) {
       try {
-        await runJob(env, m.body);
+        await runJob(env, m.body, bulk);
         m.ack();
       } catch (e) {
         console.error("job failed", JSON.stringify(m.body), e);
@@ -194,14 +181,31 @@ export default {
       if (!env.ADMIN_TOKEN || req.headers.get("Authorization") !== `Bearer ${env.ADMIN_TOKEN}`) {
         return new Response("unauthorized", { status: 401 });
       }
+      const s = Number(url.searchParams.get("season") ?? season);
+      if (!isSeason(s)) return new Response("unknown season", { status: 400 });
       if (req.method === "POST" && url.pathname === "/admin/backfill") {
-        return Response.json(await backfill(env, url.searchParams.get("step")));
+        // Restart the backfill state machine for one season (or all with ?season=all is not supported).
+        await env.DB.prepare("UPDATE seasons SET backfill_stage = NULL, backfilled_at = NULL WHERE year = ?")
+          .bind(s)
+          .run();
+        return Response.json({ restarted: s });
       }
       if (req.method === "POST" && url.pathname === "/admin/sync-event") {
         const code = url.searchParams.get("code");
         if (!code) return new Response("code required", { status: 400 });
-        await enqueue(env, [{ job: "eventMatches", season, code, force: true }]);
-        return Response.json({ enqueued: code });
+        await enqueue(env, [{ job: "eventMatches", season: s, code: code.toUpperCase(), force: true }]);
+        return Response.json({ enqueued: `${s}/${code}` });
+      }
+      if (url.pathname === "/admin/status") {
+        const [seasons, runs] = await env.DB.batch([
+          env.DB.prepare(
+            "SELECT year, backfill_stage, backfill_stage_at, backfilled_at FROM seasons ORDER BY year DESC",
+          ),
+          env.DB.prepare(
+            "SELECT substr(target, 1, 5) AS season, COUNT(*) AS jobs, SUM(requests) AS requests, SUM(error IS NOT NULL) AS errors FROM sync_runs WHERE started_at > ? GROUP BY 1",
+          ).bind(new Date(Date.now() - 3_600_000).toISOString()),
+        ]);
+        return Response.json({ seasons: seasons?.results, lastHour: runs?.results });
       }
       if (url.pathname === "/admin/runs") {
         const { results } = await env.DB.prepare("SELECT * FROM sync_runs ORDER BY id DESC LIMIT 100").all();

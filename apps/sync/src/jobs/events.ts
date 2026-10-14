@@ -13,6 +13,7 @@ export async function syncEvents(env: Env, api: FtcApi, season: number) {
     name: e.name,
     type: e.type,
     type_name: e.typeName,
+    kind: eventKind(e.typeName),
     division_code: e.divisionCode,
     parent_code: null,
     region_code: e.regionCode,
@@ -36,3 +37,7 @@ export async function syncEvents(env: Env, api: FtcApi, season: number) {
   await runBatched(env.DB, [...upsertStatements(env.DB, "events", rows, ["season", "code"]), t.commit()]);
   return rows.length;
 }
+
+/** FTCScout-style normalised type: "League Meet" → "LeagueMeet", "Non-Advancement" → "NonAdvancement". */
+export const eventKind = (typeName: string | null | undefined) =>
+  (typeName ?? "").replace(/[\s\-/]/g, "") || null;

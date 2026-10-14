@@ -14,15 +14,18 @@ export function upsertStatements(
   table: string,
   rows: Row[],
   conflict: string[],
+  /** Keep existing rows untouched (insert only new ones). */
+  opts: { ignoreExisting?: boolean } = {},
 ): D1PreparedStatement[] {
   const first = rows[0];
   if (!first) return [];
   const cols = Object.keys(first);
   const perStmt = Math.max(1, Math.floor(D1_MAX_PARAMS / cols.length));
   const updates = cols.filter((c) => !conflict.includes(c));
-  const onConflict = updates.length
-    ? `DO UPDATE SET ${updates.map((c) => `${c}=excluded.${c}`).join(",")}`
-    : "DO NOTHING";
+  const onConflict =
+    updates.length && !opts.ignoreExisting
+      ? `DO UPDATE SET ${updates.map((c) => `${c}=excluded.${c}`).join(",")}`
+      : "DO NOTHING";
   const placeholder = `(${cols.map(() => "?").join(",")})`;
 
   const out: D1PreparedStatement[] = [];

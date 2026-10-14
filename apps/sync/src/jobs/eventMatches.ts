@@ -1,19 +1,17 @@
-import { bool, nowIso, runBatched, upsertStatements } from "@ftcref/db";
+import { bool, nowIso, type Row, runBatched, upsertStatements } from "@ftcref/db";
 import type {
   ApiAlliance,
-  ApiAlliance2026,
   ApiHybridMatch,
-  ApiMatchScores,
   ApiRanking,
   ApiTeamsPage,
   FtcApi,
   TournamentLevel,
 } from "@ftcref/ftc-api";
-import { mapAlliance2026 } from "@ftcref/seasons";
+import { type ApiScore, getSeason, scoreColumns } from "@ftcref/seasons";
 import type { Env } from "../env";
 import { changed, dataOf, type Tracked, trackedGet } from "../tracked";
 import { recomputeEventStats } from "./eventStats";
-import { teamRows } from "./teams";
+import { teamStatements } from "./teams";
 
 const LEVEL: Record<TournamentLevel, string> = {
   QUALIFICATION: "Q",
@@ -23,13 +21,32 @@ const LEVEL: Record<TournamentLevel, string> = {
   OTHER: "O",
 };
 
+/** /scores payloads: traditional events have two alliances; remote events score one team per match. */
+type TradScore = {
+  matchLevel: TournamentLevel;
+  matchSeries: number;
+  matchNumber: number;
+  alliances: ApiScore[];
+};
+type RemoteScore = { matchLevel: TournamentLevel; matchNumber: number; teamNumber: number; scores: ApiScore };
+type AnyScore = TradScore | RemoteScore;
+
 const matchKey = (level: string, series: number, num: number) => `${level}|${series}|${num}`;
 
 /**
- * Sync one event's schedule, results, score details, rankings, team list and alliances.
+ * Sync one event's schedule, results, score details, rankings, team list and alliances, for any season.
  * Cheap path: if both hybrid schedules return 304, nothing else is fetched.
+ *
+ * Remote events (2020–21) have one team per match and every team plays "Q1", "Q2"…; we store the team
+ * number in `series` so (level, series, match_number) stays unique.
  */
 export async function syncEventMatches(env: Env, api: FtcApi, season: number, code: string, force = false) {
+  const desc = getSeason(season);
+  const ev = await env.DB.prepare("SELECT remote FROM events WHERE season = ? AND code = ?")
+    .bind(season, code)
+    .first<{ remote: number }>();
+  const remote = !!ev?.remote;
+
   const qualH = await trackedGet<{ schedule: ApiHybridMatch[] }>(
     env,
     api,
@@ -37,54 +54,46 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     `schedule/${code}/qual/hybrid`,
     force,
   );
-  const playH = await trackedGet<{ schedule: ApiHybridMatch[] }>(
-    env,
-    api,
-    season,
-    `schedule/${code}/playoff/hybrid`,
-    force,
-  );
-  if (!changed(qualH) && !changed(playH)) {
-    await env.DB.batch([qualH.commit(), playH.commit()]);
+  const playH = remote
+    ? null
+    : await trackedGet<{ schedule: ApiHybridMatch[] }>(
+        env,
+        api,
+        season,
+        `schedule/${code}/playoff/hybrid`,
+        force,
+      );
+  if (!changed(qualH) && (!playH || !changed(playH))) {
+    await env.DB.batch([qualH.commit(), ...(playH ? [playH.commit()] : [])]);
     return { changed: false, rows: 0 };
   }
 
   const [qualS, playS, ranks, teams, allys] = await Promise.all([
-    trackedGet<{ matchScores: ApiMatchScores<ApiAlliance2026>[] }>(
-      env,
-      api,
-      season,
-      `scores/${code}/qual`,
-      force,
-    ),
-    trackedGet<{ matchScores: ApiMatchScores<ApiAlliance2026>[] }>(
-      env,
-      api,
-      season,
-      `scores/${code}/playoff`,
-      force,
-    ),
+    trackedGet<{ matchScores: AnyScore[] }>(env, api, season, `scores/${code}/qual`, force),
+    remote
+      ? null
+      : trackedGet<{ matchScores: AnyScore[] }>(env, api, season, `scores/${code}/playoff`, force),
     trackedGet<{ rankings: ApiRanking[] }>(env, api, season, `rankings/${code}`, force),
     trackedGet<ApiTeamsPage>(env, api, season, `teams?eventCode=${code}`, force),
-    trackedGet<{ alliances: ApiAlliance[] }>(env, api, season, `alliances/${code}`, force),
+    remote ? null : trackedGet<{ alliances: ApiAlliance[] }>(env, api, season, `alliances/${code}`, force),
   ]);
-  const commits = [qualH, playH, qualS, playS, ranks, teams, allys].map((t: Tracked<unknown>) => t.commit());
+  const tracked: Tracked<unknown>[] = [];
+  for (const t of [qualH, playH, qualS, playS, ranks, teams, allys])
+    if (t) tracked.push(t as Tracked<unknown>);
   const now = nowIso();
   let rows = 0;
 
   // --- matches -------------------------------------------------------------
-  // A 304 on one schedule only means that half is unchanged; we re-upsert whatever we received.
-  const hybrid = [...(dataOf(qualH)?.schedule ?? []), ...(dataOf(playH)?.schedule ?? [])];
-  const scores = [...(dataOf(qualS)?.matchScores ?? []), ...(dataOf(playS)?.matchScores ?? [])];
+  const hybrid = [...(dataOf(qualH)?.schedule ?? []), ...(playH ? (dataOf(playH)?.schedule ?? []) : [])];
+  const seriesOf = (m: ApiHybridMatch) => (remote ? (m.teams[0]?.teamNumber ?? 0) : (m.series ?? 0));
 
   const matchRows = hybrid.map((m) => {
-    const level = LEVEL[m.tournamentLevel];
     const played = m.postResultTime != null || m.scoreRedFinal != null;
     return {
       season,
       event_code: code,
-      level,
-      series: m.series ?? 0,
+      level: LEVEL[m.tournamentLevel] ?? "O",
+      series: seriesOf(m),
       match_number: m.matchNumber,
       description: m.description,
       field: m.field ? Number(m.field) || null : null,
@@ -92,12 +101,12 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
       actual_start_at: m.actualStartTime,
       post_result_at: m.postResultTime,
       red_score: m.scoreRedFinal,
-      blue_score: m.scoreBlueFinal,
+      blue_score: remote ? null : m.scoreBlueFinal,
       red_auto: m.scoreRedAuto,
-      blue_auto: m.scoreBlueAuto,
+      blue_auto: remote ? null : m.scoreBlueAuto,
       red_foul: m.scoreRedFoul,
-      blue_foul: m.scoreBlueFoul,
-      winner: !played ? null : m.redWins ? "R" : m.blueWins ? "B" : "T",
+      blue_foul: remote ? null : m.scoreBlueFoul,
+      winner: !played || remote ? null : m.redWins ? "R" : m.blueWins ? "B" : "T",
       played: bool(played),
       updated_at: now,
     };
@@ -122,17 +131,15 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
   const idByKey = new Map(ids.results.map((r) => [matchKey(r.level, r.series, r.match_number), r.id]));
 
   const teamStmts: D1PreparedStatement[] = [];
-  const scoreRows: Record<string, string | number | null>[] = [];
   for (const m of hybrid) {
-    const level = LEVEL[m.tournamentLevel];
-    const id = idByKey.get(matchKey(level, m.series ?? 0, m.matchNumber));
+    const id = idByKey.get(matchKey(LEVEL[m.tournamentLevel] ?? "O", seriesOf(m), m.matchNumber));
     if (id == null) continue;
     const mt = m.teams
       .filter((t) => t.teamNumber != null)
       .map((t) => ({
         match_id: id,
         station: t.station,
-        alliance: t.station.startsWith("Red") ? "R" : "B",
+        alliance: remote || t.station.startsWith("Red") ? "R" : "B",
         team: t.teamNumber as number,
         surrogate: bool(t.surrogate),
         no_show: bool(t.noShow),
@@ -141,14 +148,57 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
       }));
     teamStmts.push(...upsertStatements(env.DB, "match_teams", mt, ["match_id", "station"]));
   }
-  // Keyed off the DB ids (not `hybrid`) so score updates land even when the schedule itself was a 304.
+
+  // --- scores (keyed off DB ids so updates land even when the schedule itself was a 304) -------------
+  const scores = [
+    ...(dataOf(qualS)?.matchScores ?? []),
+    ...(playS ? (dataOf(playS)?.matchScores ?? []) : []),
+  ];
+  const scoreRows: Row[] = [];
+  const toRow = (id: number, alliance: string, a: ApiScore) => ({
+    match_id: id,
+    alliance,
+    season,
+    ...scoreColumns(desc, a),
+    detail: JSON.stringify(a),
+    updated_at: now,
+  });
   for (const s of scores) {
-    const id = idByKey.get(matchKey(LEVEL[s.matchLevel], s.matchSeries ?? 0, s.matchNumber));
-    if (id == null) continue;
-    for (const a of s.alliances) scoreRows.push({ match_id: id, ...mapAlliance2026(a), updated_at: now });
+    const level = LEVEL[s.matchLevel] ?? "O";
+    if ("scores" in s) {
+      const id = idByKey.get(matchKey(level, s.teamNumber, s.matchNumber));
+      if (id != null && s.scores) scoreRows.push(toRow(id, "R", s.scores));
+    } else {
+      const id = idByKey.get(matchKey(level, s.matchSeries ?? 0, s.matchNumber));
+      if (id == null) continue;
+      for (const a of s.alliances ?? []) scoreRows.push(toRow(id, a.alliance === "Blue" ? "B" : "R", a));
+    }
   }
 
-  // --- rankings / teams / alliances -----------------------------------------
+  const eventTeams = dataOf(teams)?.teams ?? [];
+  await runBatched(env.DB, [
+    ...teamStmts,
+    // Each score row carries ~1–3 KB of JSON; one row per statement keeps statements small.
+    ...scoreRows.flatMap((r) => upsertStatements(env.DB, "match_scores", [r], ["match_id", "alliance"])),
+    // Denormalise no-penalty totals onto matches (kept out of the match upsert so a 304 on scores can't null them).
+    env.DB.prepare(
+      `UPDATE matches SET
+         red_np  = (SELECT np FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'R'),
+         blue_np = (SELECT np FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'B')
+       WHERE season = ? AND event_code = ?`,
+    ).bind(season, code),
+    ...teamStatements(env.DB, season, eventTeams),
+    ...upsertStatements(
+      env.DB,
+      "event_teams",
+      eventTeams.map((t) => ({ season, event_code: code, team: t.teamNumber })),
+      ["season", "event_code", "team"],
+    ),
+  ]);
+  rows += scoreRows.length + eventTeams.length;
+
+  // Rankings and alliances are written separately: a shape surprise in either must not
+  // roll back the matches, teams and scores above.
   const rankRows = (dataOf(ranks)?.rankings ?? []).map((r) => ({
     season,
     event_code: code,
@@ -168,9 +218,12 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     dq_count: r.dq,
     updated_at: now,
   }));
-  const eventTeams = dataOf(teams)?.teams ?? [];
-  const tr = teamRows(season, eventTeams);
-  const allyRows = (dataOf(allys)?.alliances ?? []).map((a) => ({
+  rows += await bestEffort(code, "rankings", () =>
+    runBatched(env.DB, upsertStatements(env.DB, "rankings", rankRows, ["season", "event_code", "team"])).then(
+      () => rankRows.length,
+    ),
+  );
+  const allyRows = (allys ? (dataOf(allys)?.alliances ?? []) : []).map((a) => ({
     season,
     event_code: code,
     number: a.number,
@@ -181,33 +234,6 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     backup: teamNum(a.backup),
     updated_at: now,
   }));
-
-  await runBatched(env.DB, [
-    ...teamStmts,
-    ...upsertStatements(env.DB, "s2026_match_scores", scoreRows, ["match_id", "alliance"]),
-    // Denormalize no-penalty totals onto matches (kept out of the match upsert so a 304 on scores can't null them).
-    env.DB.prepare(
-      `UPDATE matches SET
-         red_np  = (SELECT pre_foul_total FROM s2026_match_scores s WHERE s.match_id = matches.id AND s.alliance = 'R'),
-         blue_np = (SELECT pre_foul_total FROM s2026_match_scores s WHERE s.match_id = matches.id AND s.alliance = 'B')
-       WHERE season = ? AND event_code = ?`,
-    ).bind(season, code),
-    ...upsertStatements(env.DB, "teams", tr.teams, ["number"]),
-    ...upsertStatements(
-      env.DB,
-      "event_teams",
-      eventTeams.map((t) => ({ season, event_code: code, team: t.teamNumber })),
-      ["season", "event_code", "team"],
-    ),
-  ]);
-  rows += scoreRows.length + eventTeams.length;
-  // Rankings and alliances are written separately: a shape surprise in either must not
-  // roll back the matches, teams and scores above.
-  rows += await bestEffort(code, "rankings", () =>
-    runBatched(env.DB, upsertStatements(env.DB, "rankings", rankRows, ["season", "event_code", "team"])).then(
-      () => rankRows.length,
-    ),
-  );
   rows += await bestEffort(code, "alliances", () =>
     runBatched(
       env.DB,
@@ -215,9 +241,9 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     ).then(() => allyRows.length),
   );
 
-  rows += await recomputeEventStats(env.DB, season, code);
+  rows += await recomputeEventStats(env.DB, season, code, remote);
   // Only now is it safe to remember Last-Modified values.
-  await env.DB.batch(commits);
+  await env.DB.batch(tracked.map((t) => t.commit()));
   await bumpVersion(env, `event:${season}:${code}`);
   return { changed: true, rows };
 }
