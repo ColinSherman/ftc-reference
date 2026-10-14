@@ -104,6 +104,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
     const region = c.req.query("region") ?? "all";
     const format = c.req.query("format") ?? "all";
     const q = (c.req.query("q") ?? "").trim();
+    const withResults = c.req.query("results") === "1";
 
     const where = ["e.season = ?"];
     const args: (string | number)[] = [season];
@@ -120,6 +121,11 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
     else if (region !== "all") {
       where.push("e.region_code = ?");
       args.push(region);
+    }
+    if (withResults) {
+      where.push(
+        "EXISTS (SELECT 1 FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1)",
+      );
     }
     if (format === "trad") where.push("e.remote = 0");
     else if (format === "remote") where.push("e.remote = 1");
@@ -163,11 +169,12 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       if (region !== "all") p.set("region", region);
       if (format !== "all") p.set("format", format);
       if (q) p.set("q", q);
+      if (withResults) p.set("results", "1");
       const s = p.toString();
       return s ? `?${s}` : "";
     };
     const auto = { onchange: "this.form.submit()" } as Record<string, string>;
-    const filtered = type !== "comp" || region !== "all" || format !== "all" || !!q;
+    const filtered = type !== "comp" || region !== "all" || format !== "all" || !!q || withResults;
 
     return c.html(
       <Layout
@@ -259,6 +266,11 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
             Search
             <input name="q" type="search" value={q} placeholder="Name, city or code" />
           </label>
+          <label class="chk">
+            <span>
+              <input type="checkbox" name="results" value="1" checked={withResults} {...auto} /> Has results
+            </span>
+          </label>
           <button type="submit" class="go">
             Filter
           </button>
@@ -296,12 +308,27 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
                     </th>
                   </tr>
                   {es.map((e) => (
-                    <tr>
+                    <tr
+                      class={
+                        e.played > 0
+                          ? "has"
+                          : eventStatus(e.date_start, e.date_end, today) === "final"
+                            ? "nores"
+                            : undefined
+                      }
+                    >
                       <td class="l" data-v={e.date_start}>
                         {fmtDateRange(e.date_start, e.date_end)}
                       </td>
                       <td class="l">
-                        <a href={`/events/${season}/${e.code}`}>{e.name}</a>{" "}
+                        <a class="ev" href={`/events/${season}/${e.code}`}>
+                          {e.name}
+                        </a>{" "}
+                        {e.played > 0 && (
+                          <span class="dot" title={`${e.played} matches with results`}>
+                            ● results
+                          </span>
+                        )}{" "}
                         {e.remote ? <span class="pill">remote</span> : ""}
                       </td>
                       <td class="l">{(e.kind && KIND_LABELS[e.kind]) ?? e.type_name}</td>

@@ -81,6 +81,9 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .filters label{display:flex;flex-direction:column;font-size:11px;color:var(--muted);gap:2px}
 .filters select,.filters input{font:12px Verdana,sans-serif;padding:2px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:2px}
 .filters input{width:180px}.filters .go{font:12px Verdana,sans-serif}
+.st tr.has a.ev{font-weight:bold}.st .dot{font-size:10px;color:var(--win);white-space:nowrap}
+.st tr.nores td,.st tr.nores a.ev{color:var(--muted)}
+.filters .chk{justify-content:flex-end}.filters .chk span{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--fg);padding-bottom:3px}
 .ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
