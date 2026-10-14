@@ -31,9 +31,21 @@ export function upsertStatements(
     const sql =
       `INSERT INTO ${table} (${cols.join(",")}) VALUES ${chunk.map(() => placeholder).join(",")} ` +
       `ON CONFLICT (${conflict.join(",")}) ${onConflict}`;
-    out.push(db.prepare(sql).bind(...chunk.flatMap((r) => cols.map((c) => r[c] ?? null))));
+    out.push(db.prepare(sql).bind(...chunk.flatMap((r) => cols.map((c) => bindable(table, c, r[c])))));
   }
   return out;
+}
+
+/**
+ * D1 only binds primitives. The FTC API occasionally returns an object/array where its docs
+ * promise a scalar; store it as JSON (and log where) instead of failing the whole event.
+ */
+function bindable(table: string, col: string, v: unknown): string | number | null {
+  if (v == null) return null;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (typeof v === "string" || typeof v === "number") return v;
+  console.warn(`non-scalar value for ${table}.${col}: ${JSON.stringify(v).slice(0, 200)}`);
+  return JSON.stringify(v);
 }
 
 /** Run statements in batches (each batch is one implicit transaction). */

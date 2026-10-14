@@ -175,10 +175,10 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     event_code: code,
     number: a.number,
     name: a.name,
-    captain: a.captain,
-    pick1: a.round1,
-    pick2: a.round2,
-    backup: a.backup,
+    captain: teamNum(a.captain),
+    pick1: teamNum(a.round1),
+    pick2: teamNum(a.round2),
+    backup: teamNum(a.backup),
     updated_at: now,
   }));
 
@@ -192,7 +192,6 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
          blue_np = (SELECT pre_foul_total FROM s2026_match_scores s WHERE s.match_id = matches.id AND s.alliance = 'B')
        WHERE season = ? AND event_code = ?`,
     ).bind(season, code),
-    ...upsertStatements(env.DB, "rankings", rankRows, ["season", "event_code", "team"]),
     ...upsertStatements(env.DB, "teams", tr.teams, ["number"]),
     ...upsertStatements(
       env.DB,
@@ -200,15 +199,48 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
       eventTeams.map((t) => ({ season, event_code: code, team: t.teamNumber })),
       ["season", "event_code", "team"],
     ),
-    ...upsertStatements(env.DB, "alliances", allyRows, ["season", "event_code", "number"]),
   ]);
-  rows += scoreRows.length + rankRows.length + eventTeams.length + allyRows.length;
+  rows += scoreRows.length + eventTeams.length;
+  // Rankings and alliances are written separately: a shape surprise in either must not
+  // roll back the matches, teams and scores above.
+  rows += await bestEffort(code, "rankings", () =>
+    runBatched(env.DB, upsertStatements(env.DB, "rankings", rankRows, ["season", "event_code", "team"])).then(
+      () => rankRows.length,
+    ),
+  );
+  rows += await bestEffort(code, "alliances", () =>
+    runBatched(
+      env.DB,
+      upsertStatements(env.DB, "alliances", allyRows, ["season", "event_code", "number"]),
+    ).then(() => allyRows.length),
+  );
 
   rows += await recomputeEventStats(env.DB, season, code);
   // Only now is it safe to remember Last-Modified values.
   await env.DB.batch(commits);
   await bumpVersion(env, `event:${season}:${code}`);
   return { changed: true, rows };
+}
+
+/** Team numbers sometimes arrive wrapped in an object; accept either shape. */
+export function teamNum(v: unknown): number | null {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && /^\d+$/.test(v)) return Number(v);
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    for (const k of ["teamNumber", "team", "number"]) if (typeof o[k] === "number") return o[k] as number;
+    console.warn("unrecognised team value", JSON.stringify(v).slice(0, 300));
+  }
+  return null;
+}
+
+async function bestEffort(code: string, what: string, fn: () => Promise<number>): Promise<number> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.error(`${code}: ${what} write failed`, e);
+    return 0;
+  }
 }
 
 export async function bumpVersion(env: Env, key: string) {

@@ -19,7 +19,8 @@ export async function syncLeagues(env: Env, api: FtcApi, season: number) {
     ...upsertStatements(env.DB, "leagues", rows, ["season", "region", "code"]),
     t.commit(),
   ]);
-  return leagues.map((l) => ({ region: l.region, code: l.code }));
+  // Some leagues come back with a blank code, which would produce an invalid members URL.
+  return leagues.filter((l) => l.region && l.code).map((l) => ({ region: l.region, code: l.code }));
 }
 
 export async function syncLeagueMembers(env: Env, api: FtcApi, season: number, region: string, code: string) {

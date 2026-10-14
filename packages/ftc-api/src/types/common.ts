@@ -110,11 +110,11 @@ export interface ApiRanking {
 export interface ApiAlliance {
   number: number;
   name: string | null;
-  captain: number | null;
-  round1: number | null;
-  round2: number | null;
+  captain: unknown;
+  round1: unknown;
+  round2: unknown;
   round3: number | null;
-  backup: number | null;
+  backup: unknown;
 }
 
 export interface ApiAward {
