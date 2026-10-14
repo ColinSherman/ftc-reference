@@ -89,6 +89,9 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .st a.vtag{font-size:10px;color:var(--red);white-space:nowrap;text-decoration:none}.st a.vtag:hover{text-decoration:underline}
 .st a.tn b.num{color:var(--link);font-weight:normal;margin-right:2px}.st .sub.ind{margin-left:26px}
 .st thead th{white-space:normal;vertical-align:bottom;line-height:1.15}
+.hs{font-size:11px;font-weight:bold;white-space:nowrap}.hs-ok{color:var(--win)}.hs-warn{color:var(--pollen)}.hs-fail{color:var(--red)}.hs-info{color:var(--muted)}
+.meter{display:inline-block;width:140px;height:8px;background:var(--head);border:1px solid var(--line);vertical-align:middle;margin-right:6px}.meter span{display:block;height:100%;background:var(--rule)}
+.st .sub.r{color:var(--red)}
 .ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}

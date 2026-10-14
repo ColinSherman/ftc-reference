@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { FAVICON_SVG } from "./assets";
 import type { Env } from "./env";
+import { adminRoutes } from "./routes/admin";
 import { avatarRoutes } from "./routes/avatar";
 import { eventRoutes } from "./routes/event";
 import { homeRoutes } from "./routes/home";
@@ -32,6 +33,7 @@ app.route("/a", avatarRoutes);
 app.route("/teams", teamRoutes);
 app.route("/events", eventRoutes);
 app.route("/events", matchRoutes);
+app.route("/", adminRoutes);
 app.route("/", videoRoutes);
 app.route("/", homeRoutes);
 

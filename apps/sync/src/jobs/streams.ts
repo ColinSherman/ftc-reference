@@ -3,6 +3,7 @@ import {
   alignMatches,
   parseYoutubeSource,
   parseYoutubeUrl,
+  recordApiUsage,
   rssVideos,
   type StreamDetails,
   type StreamWindow,
@@ -32,6 +33,19 @@ interface Ev {
 export async function alignEventStreams(env: Env, limit = 200) {
   if (!env.YOUTUBE_API_KEY) return { events: 0, matches: 0 };
   const yt = new YouTube(env.YOUTUBE_API_KEY);
+  const usage = { rss: 0 };
+  try {
+    const r = await alignInner(env, yt, usage, limit);
+    await recordApiUsage(env.DB, "youtube", yt.calls);
+    await recordApiUsage(env.DB, "youtube_rss", usage.rss);
+    return r;
+  } catch (e) {
+    await recordApiUsage(env.DB, "youtube", yt.calls, e);
+    throw e;
+  }
+}
+
+async function alignInner(env: Env, yt: YouTube, usage: { rss: number }, limit: number) {
   const recent = new Date(Date.now() - 2 * DAY).toISOString().slice(0, 10);
   const { results: events } = await env.DB.prepare(
     `SELECT e.season, e.code, e.timezone, e.date_start, e.date_end, e.live_stream_url FROM events e
@@ -70,6 +84,7 @@ export async function alignEventStreams(env: Env, limit = 200) {
       const lo = Date.parse(e.date_start.slice(0, 10)) - DAY;
       const hi = Date.parse(e.date_end.slice(0, 10)) + 2 * DAY;
       const inWindow = (t: string) => Date.parse(t) >= lo && Date.parse(t) <= hi;
+      usage.rss++;
       let vids = (await rssVideos({ channelId })).filter((v) => inWindow(v.publishedAt));
       if (vids.length === 0 && Date.now() - lo > 60 * DAY) {
         vids = (await yt.playlistVideos(YouTube.uploadsPlaylist(channelId), 4)).filter((v) =>

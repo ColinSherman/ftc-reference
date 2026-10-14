@@ -14,6 +14,8 @@ import { Hono } from "hono";
 import { isAdmin, logIn, logOut } from "../admin";
 import { type AppContext, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
 import { Layout, Table } from "../views/layout";
+import { ytFor } from "../yt";
+import { AdminNav } from "./admin";
 
 export const videoRoutes = new Hono<{ Bindings: Env }>();
 
@@ -203,7 +205,7 @@ videoRoutes.post("/videos/submit", async (c) => {
 
   if (!c.env.YOUTUBE_API_KEY)
     return c.html(<Msg title="Video import isn't configured yet" back="/" />, 503, noStore);
-  const yt = new YouTube(c.env.YOUTUBE_API_KEY);
+  const yt = ytFor(c);
   const raw = String(f.source ?? "");
   const event = String(f.event ?? "").trim() || undefined;
   let videos: YtVideo[] = [];
@@ -332,29 +334,9 @@ function Msg(props: { title: string; back: string; backLabel?: string }) {
 
 // ----------------------------------------------------------------------------- admin review
 
-videoRoutes.get("/admin", async (c) => {
-  if (await isAdmin(c)) return c.redirect("/admin/videos");
-  return c.html(
-    <Layout title="Admin">
-      <h1>Admin</h1>
-      <form method="post" action="/admin/login" class="filters" style="max-width:420px">
-        <label>
-          Admin token
-          <input name="token" type="password" required autocomplete="current-password" />
-        </label>
-        <button type="submit" class="go">
-          Log in
-        </button>
-      </form>
-    </Layout>,
-    200,
-    noStore,
-  );
-});
-
 videoRoutes.post("/admin/login", async (c) => {
   const f = await c.req.parseBody();
-  if (await logIn(c, String(f.token ?? ""))) return c.redirect("/admin/videos");
+  if (await logIn(c, String(f.token ?? ""))) return c.redirect("/admin");
   return c.html(<Msg title="Wrong token" back="/admin" />, 401, noStore);
 });
 
@@ -407,6 +389,7 @@ videoRoutes.get("/admin/videos", async (c) => {
   return c.html(
     <Layout title="Review videos">
       <h1>Match videos</h1>
+      <AdminNav active="videos" />
       <div class="tabs">
         {["pending", "approved", "rejected"].map((s) =>
           s === status ? (
@@ -419,11 +402,6 @@ videoRoutes.get("/admin/videos", async (c) => {
             </a>
           ),
         )}
-        <form method="post" action="/admin/logout" style="margin-left:auto">
-          <button type="submit" class="go">
-            Log out
-          </button>
-        </form>
       </div>
       {status === "pending" && rows.some((r) => r.confidence === "high") && (
         <form method="post" action="/admin/videos/bulk">
@@ -624,7 +602,7 @@ videoRoutes.post("/admin/channels", async (c) => {
     const ch = await c.env.DB.prepare("SELECT trusted, title FROM video_channels WHERE channel_id = ?")
       .bind(id)
       .first<{ trusted: number; title: string | null }>();
-    const yt = new YouTube(c.env.YOUTUBE_API_KEY);
+    const yt = ytFor(c);
     let videos: YtVideo[];
     let r: ImportResult;
     try {
@@ -671,7 +649,7 @@ videoRoutes.post("/admin/channels", async (c) => {
       noStore,
     );
   } else if (f.action === "add" && c.env.YOUTUBE_API_KEY) {
-    const yt = new YouTube(c.env.YOUTUBE_API_KEY);
+    const yt = ytFor(c);
     const src = parseYoutubeSource(String(f.url ?? "").replace(/^@/, "https://www.youtube.com/@"));
     let chId: string | null = null;
     let title: string | null = null;
@@ -734,7 +712,7 @@ async function anchorSubmit(c: AppContext, f: Record<string, unknown>, by: strin
   let details: Awaited<ReturnType<YouTube["streamDetails"]>>[number] | undefined;
   if (c.env.YOUTUBE_API_KEY) {
     try {
-      details = (await new YouTube(c.env.YOUTUBE_API_KEY).streamDetails([yt.id]))[0];
+      details = (await ytFor(c).streamDetails([yt.id]))[0];
     } catch {
       /* timing still works without it */
     }

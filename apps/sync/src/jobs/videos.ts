@@ -1,5 +1,5 @@
 import { nowIso } from "@ftcref/db";
-import { importVideos, rssVideos, YouTube } from "@ftcref/videos";
+import { importVideos, recordApiUsage, rssVideos, YouTube } from "@ftcref/videos";
 import type { Env } from "../env";
 
 /**
@@ -11,6 +11,19 @@ import type { Env } from "../env";
 export async function scanVideoChannels(env: Env) {
   if (!env.YOUTUBE_API_KEY) return { channels: 0, approved: 0, pending: 0 };
   const yt = new YouTube(env.YOUTUBE_API_KEY);
+  const usage = { rss: 0 };
+  try {
+    const r = await scanInner(env, yt, usage);
+    await recordApiUsage(env.DB, "youtube", yt.calls);
+    await recordApiUsage(env.DB, "youtube_rss", usage.rss);
+    return r;
+  } catch (e) {
+    await recordApiUsage(env.DB, "youtube", yt.calls, e);
+    throw e;
+  }
+}
+
+async function scanInner(env: Env, yt: YouTube, usage: { rss: number }) {
   const { results: channels } = await env.DB.prepare(
     "SELECT channel_id, trusted, last_scanned_at FROM video_channels WHERE auto_scan = 1",
   ).all<{ channel_id: string; trusted: number; last_scanned_at: string | null }>();
@@ -18,6 +31,7 @@ export async function scanVideoChannels(env: Env) {
   let approved = 0;
   let pending = 0;
   for (const ch of channels) {
+    if (ch.last_scanned_at) usage.rss++;
     const videos = ch.last_scanned_at
       ? await rssVideos({ channelId: ch.channel_id })
       : await yt.playlistVideos(YouTube.uploadsPlaylist(ch.channel_id), 10);
