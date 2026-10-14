@@ -15,6 +15,9 @@ export interface ImportResult {
 
 const DAY = 86_400_000;
 
+/** Automatic video matching/timing covers these seasons for now (DECODE 2025 → current). */
+export const VIDEO_MIN_SEASON = 2025;
+
 /**
  * Match a batch of YouTube videos to FTC matches and store them. Confident matches from trusted
  * channels go live immediately; everything else that found a match waits for review.
@@ -49,9 +52,9 @@ export async function importVideos(
   const { results: events } = await db
     .prepare(
       `SELECT season, code, name, date_start, date_end FROM events
-       WHERE substr(date_start, 1, 10) BETWEEN ? AND ? AND remote = 0`,
+       WHERE substr(date_start, 1, 10) BETWEEN ? AND ? AND remote = 0 AND season >= ?`,
     )
-    .bind(lo, hi)
+    .bind(lo, hi, VIDEO_MIN_SEASON)
     .all<EventCandidate>();
 
   // Pass 1: resolve events/match refs; pass 2: look up the actual match ids.
@@ -129,4 +132,89 @@ export async function submitMatchVideo(
     )
     .bind(matchId, video.id, video.start ?? null, submittedBy, new Date().toISOString())
     .run();
+}
+
+/**
+ * Time a whole-event video from ONE known point ("Q1 starts at 0:12:34"). FIRST's recorded start of
+ * every other match gives its offset relative to the anchor; offsets outside the video are dropped.
+ * Works for uncut uploads (no livestream metadata) and for re-timing an auto-aligned stream.
+ */
+export async function anchorAlign(
+  db: Db,
+  opts: {
+    season: number;
+    code: string;
+    videoId: string;
+    anchor: { level: string; series: number; number: number };
+    anchorS: number;
+    durationS: number | null;
+    title?: string | null;
+    channelId?: string | null;
+    channelTitle?: string | null;
+    submittedBy?: string | null;
+    approved: boolean;
+  },
+): Promise<{ placed: number; skipped: number; reason?: string }> {
+  const { results: matches } = await db
+    .prepare(
+      `SELECT id, level, series, match_number, actual_start_at FROM matches
+       WHERE season = ? AND event_code = ? AND played = 1 AND actual_start_at IS NOT NULL`,
+    )
+    .bind(opts.season, opts.code)
+    .all<{ id: number; level: string; series: number; match_number: number; actual_start_at: string }>();
+  const anchor = matches.find(
+    (m) =>
+      m.level === opts.anchor.level &&
+      m.series === opts.anchor.series &&
+      m.match_number === opts.anchor.number,
+  );
+  if (!anchor)
+    return { placed: 0, skipped: matches.length, reason: "anchor match has no recorded start time" };
+  // Same-zone wall clocks: the difference needs no time zone.
+  const t0 = Date.parse(`${anchor.actual_start_at.slice(0, 23)}Z`);
+  const now = new Date().toISOString();
+  const stmts: D1PreparedStatement[] = [];
+  let skipped = 0;
+  for (const m of matches) {
+    const off = opts.anchorS + (Date.parse(`${m.actual_start_at.slice(0, 23)}Z`) - t0) / 1000;
+    if (off < 0 || (opts.durationS != null && off > opts.durationS)) {
+      skipped++;
+      continue;
+    }
+    // The anchor is where the match visibly starts, so no extra lead-in beyond a few seconds.
+    const start = Math.max(0, Math.round(off - 5));
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO videos (match_id, provider, video_id, start_s, source, submitted_by, status, title, channel_id,
+             channel_title, confidence, reason, created_at, reviewed_at)
+           VALUES (?, 'youtube', ?, ?, 'anchor', ?, ?, ?, ?, ?, 'high', ?, ?, ?)
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(
+          m.id,
+          opts.videoId,
+          start,
+          opts.submittedBy ?? null,
+          opts.approved ? "approved" : "pending",
+          opts.title ?? null,
+          opts.channelId ?? null,
+          opts.channelTitle ?? null,
+          `full-event video timed from ${opts.anchor.level}${opts.anchor.number} @ ${opts.anchorS}s`,
+          now,
+          opts.approved ? now : null,
+        ),
+    );
+  }
+  // A manual anchor supersedes auto-timing (and any earlier anchor) of the same video at this event.
+  stmts.unshift(
+    db
+      .prepare(
+        `DELETE FROM videos WHERE video_id = ? AND source IN ('auto_align', 'anchor')
+         AND match_id IN (SELECT id FROM matches WHERE season = ? AND event_code = ?)`,
+      )
+      .bind(opts.videoId, opts.season, opts.code),
+  );
+  for (let i = 0; i < stmts.length; i += 100) await db.batch(stmts.slice(i, i + 100));
+  return { placed: stmts.length - 1, skipped };
 }

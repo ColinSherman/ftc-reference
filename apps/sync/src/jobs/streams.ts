@@ -6,6 +6,7 @@ import {
   rssVideos,
   type StreamDetails,
   type StreamWindow,
+  VIDEO_MIN_SEASON,
   YouTube,
 } from "@ftcref/videos";
 import type { Env } from "../env";
@@ -35,13 +36,13 @@ export async function alignEventStreams(env: Env, limit = 200) {
   const { results: events } = await env.DB.prepare(
     `SELECT e.season, e.code, e.timezone, e.date_start, e.date_end, e.live_stream_url FROM events e
      LEFT JOIN sync_state s ON s.key = 'stream/' || e.season || '/' || e.code
-     WHERE e.live_stream_url LIKE '%youtu%' AND e.remote = 0
+     WHERE e.live_stream_url LIKE '%youtu%' AND e.remote = 0 AND e.season >= ?
        AND EXISTS (SELECT 1 FROM matches m WHERE m.season = e.season AND m.event_code = e.code
                    AND m.played = 1 AND m.actual_start_at IS NOT NULL)
        AND (s.key IS NULL OR (substr(e.date_end, 1, 10) >= ? AND s.last_checked_at < ?))
      ORDER BY e.date_start DESC LIMIT ?`,
   )
-    .bind(recent, new Date(Date.now() - RETRY_LIVE_MS).toISOString(), limit)
+    .bind(VIDEO_MIN_SEASON, recent, new Date(Date.now() - RETRY_LIVE_MS).toISOString(), limit)
     .all<Ev>();
   if (events.length === 0) return { events: 0, matches: 0 };
 

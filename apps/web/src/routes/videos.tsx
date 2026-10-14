@@ -1,10 +1,12 @@
 import { seasonLabel } from "@ftcref/seasons";
 import {
+  anchorAlign,
   type ImportResult,
   importVideos,
   parseYoutubeSource,
   parseYoutubeUrl,
   submitMatchVideo,
+  timeToSeconds,
   YouTube,
   type YtVideo,
 } from "@ftcref/videos";
@@ -114,6 +116,51 @@ videoRoutes.get("/videos/submit", async (c) => {
             New submissions are reviewed before they appear. Channels we trust (teams and event partners that
             post consistently) go live automatically — ask to have yours added.
           </p>
+
+          <h2>Full-event video (one uncut VOD)</h2>
+          <p>
+            Have the whole event in one video? Tell us when <b>one</b> match starts and we time every other
+            match from FIRST's recorded match start times. Livestream recordings listed on the FIRST event
+            page are timed automatically — use this for re-uploads, local recordings, or to correct a stream
+            that's off.
+          </p>
+          <form
+            method="post"
+            action="/videos/submit"
+            class="filters"
+            style="flex-direction:column;align-items:stretch;max-width:640px"
+          >
+            <input type="hidden" name="mode" value="anchor" />
+            <label>
+              YouTube video link
+              <input name="url" required placeholder="https://www.youtube.com/watch?v=…" style="width:100%" />
+            </label>
+            <label>
+              Event (season/code, e.g. <code>2025/USCALACALAM2</code>)
+              <input name="event" required pattern="\d{4}/[A-Za-z0-9()]+" style="width:100%" />
+            </label>
+            <div style="display:flex;gap:14px;flex-wrap:wrap">
+              <label>
+                Match you can see start
+                <input name="anchor_match" required placeholder="Q1" style="width:110px" />
+              </label>
+              <label>
+                …starts at (in the video)
+                <input name="anchor_time" required placeholder="0:12:34" style="width:130px" />
+              </label>
+            </div>
+            <label>
+              Your name or team (optional)
+              <input name="by" maxlength={60} style="width:100%" />
+            </label>
+            <button type="submit" class="go">
+              Time all matches
+            </button>
+          </form>
+          <p class="note">
+            Tip: “starts” = the moment the match timer begins. Pick an early qualification match; one anchor
+            covers the whole day as long as the video is uncut.
+          </p>
         </>
       )}
     </Layout>,
@@ -125,6 +172,9 @@ videoRoutes.get("/videos/submit", async (c) => {
 videoRoutes.post("/videos/submit", async (c) => {
   const f = await c.req.parseBody();
   const by = String(f.by ?? "").slice(0, 60) || null;
+
+  // Whole-event video timed from one anchor match.
+  if (f.mode === "anchor") return anchorSubmit(c, f, by);
 
   // Single video for one match (from the match page).
   if (f.match) {
@@ -644,3 +694,88 @@ videoRoutes.post("/admin/channels", async (c) => {
   }
   return c.redirect("/admin/videos");
 });
+
+/** "1:02:03", "12:34", "754" or "12m34s" → seconds. */
+function clockToSeconds(s: string): number | null {
+  const t = s.trim();
+  if (/^\d+$/.test(t)) return Number(t);
+  const hms = /^(?:(\d+):)?(\d{1,2}):(\d{2})$/.exec(t);
+  if (hms) return Number(hms[1] ?? 0) * 3600 + Number(hms[2]) * 60 + Number(hms[3]);
+  return timeToSeconds(t) ?? null;
+}
+
+async function anchorSubmit(c: AppContext, f: Record<string, unknown>, by: string | null) {
+  const yt = parseYoutubeUrl(String(f.url ?? ""));
+  const [s, rawCode] = String(f.event ?? "").split("/");
+  const code = (rawCode ?? "").toUpperCase();
+  const key = parseMatchSlug(
+    String(f.anchor_match ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/^qm?/, "q"),
+  );
+  const anchorS = clockToSeconds(String(f.anchor_time ?? ""));
+  if (!yt || !s || !code || !key || anchorS == null) {
+    return c.html(
+      <Msg
+        title="Please check the link, event, match (e.g. Q1) and time (e.g. 0:12:34)"
+        back="/videos/submit"
+      />,
+      400,
+      noStore,
+    );
+  }
+  const ev = await c.env.DB.prepare("SELECT name FROM events WHERE season = ? AND code = ?")
+    .bind(Number(s), code)
+    .first<{ name: string }>();
+  if (!ev) return c.html(<Msg title={`Event ${s}/${code} not found`} back="/videos/submit" />, 404, noStore);
+
+  // Video length + channel (1 quota unit) so offsets past the end are dropped and trust can apply.
+  let details: Awaited<ReturnType<YouTube["streamDetails"]>>[number] | undefined;
+  if (c.env.YOUTUBE_API_KEY) {
+    try {
+      details = (await new YouTube(c.env.YOUTUBE_API_KEY).streamDetails([yt.id]))[0];
+    } catch {
+      /* timing still works without it */
+    }
+  }
+  const trusted = details?.channelId
+    ? !!(
+        await c.env.DB.prepare("SELECT trusted FROM video_channels WHERE channel_id = ?")
+          .bind(details.channelId)
+          .first<{ trusted: number }>()
+      )?.trusted
+    : false;
+  const approved = trusted || (await isAdmin(c));
+  const r = await anchorAlign(c.env.DB, {
+    season: Number(s),
+    code,
+    videoId: yt.id,
+    anchor: { level: key.level, series: key.series, number: key.n },
+    anchorS,
+    durationS: details?.durationS ?? null,
+    title: details?.title,
+    channelId: details?.channelId,
+    channelTitle: details?.channelTitle,
+    submittedBy: by,
+    approved,
+  });
+  if (approved && r.placed) await bump(c, s, code);
+  return c.html(
+    <Layout title="Full-event video timed">
+      <h1>{r.placed ? `Timed ${r.placed} matches` : "Couldn't time this video"}</h1>
+      <p>
+        <a href={`/events/${s}/${code}#matches`}>{ev.name}</a> · {r.placed} matches placed · {r.skipped}{" "}
+        outside the video{r.reason && ` · ${r.reason}`}
+      </p>
+      <p class="sitestats">
+        {approved ? "Live now." : "Submitted for review — it will appear once approved."}
+      </p>
+      <p>
+        <a href="/videos/submit">Submit another</a>
+      </p>
+    </Layout>,
+    200,
+    noStore,
+  );
+}
