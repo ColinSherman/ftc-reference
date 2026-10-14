@@ -94,11 +94,11 @@ export function resolveEvent(
     .map((e) => {
       let s = similarity(tt, tokens(e.name));
       if (when != null && s > 0) {
-        // Videos go up the day of, or within weeks after, the event. Mild boost near the event, mild
-        // penalty for videos published before it started.
         const start = Date.parse(e.date_start.slice(0, 10));
         const days = (when - start) / 86_400_000;
-        if (days < -1) s *= 0.6;
+        // A video can't show a match that hasn't happened, and match videos go up within months:
+        // outside [-2 days, +400 days] the event is not a candidate at all.
+        if (days < -2 || days > 400) s = 0;
         else if (days <= 21) s *= 1.15;
         else if (days > 200) s *= 0.8;
       }

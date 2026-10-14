@@ -155,3 +155,17 @@ describe("resolveEvent with odd event codes", () => {
     expect(resolveEvent("Vermont USVTM(KO day", odd)?.event.code).toBe("USVTM(KO");
   });
 });
+
+describe("noise filters", () => {
+  it("ignores other FIRST programs", () => {
+    expect(ref("Da Vinci FLL Qualifying Tournament 2025 - Qualification 1")).toBe("none");
+    expect(ref("FRC 2016 LA Regional Q12")).toBe("none");
+  });
+  it("never matches events far from the video date", () => {
+    const old = { ...EVENTS[1], date_start: "2019-12-06", date_end: "2019-12-06" } as (typeof EVENTS)[number];
+    expect(resolveEvent("SoCal FTC Group H Scrimmage 2", [old], { date: "2025-12-07" })).toBeNull();
+    expect(resolveEvent("SoCal FTC Group H Scrimmage 2", [old], { date: "2019-12-07" })?.event.code).toBe(
+      "USCALACALAM2",
+    );
+  });
+});

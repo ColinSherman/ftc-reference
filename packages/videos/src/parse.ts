@@ -53,7 +53,11 @@ const PATTERNS: [RegExp, (m: RegExpExecArray) => MatchRef | "test"][] = [
   ],
 ];
 
+/** Other FIRST programs share channels with FTC teams; their match videos must never match. */
+const OTHER_PROGRAM = /\b(?:FLL|FRC|LEGO|FIRST\s+Lego\s+League|FIRST\s+Robotics\s+Competition|VEX)\b/i;
+
 export function parseTitle(title: string): ParsedTitle {
+  if (OTHER_PROGRAM.test(title)) return { kind: "none", eventText: cleanEventText(title) };
   for (const [re, f] of PATTERNS) {
     const m = re.exec(title);
     if (!m) continue;
