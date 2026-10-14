@@ -25,7 +25,7 @@ export async function advanceBackfill(env: Env, enqueueBulk: (m: SyncMessage[]) 
   const s = await env.DB.prepare(
     "SELECT year, backfill_stage, backfill_stage_at FROM seasons WHERE backfilled_at IS NULL ORDER BY year DESC LIMIT 1",
   ).first<{ year: number; backfill_stage: string | null; backfill_stage_at: string | null }>();
-  if (!s) return null;
+  if (!s) return repairFailedEvents(env, enqueueBulk);
   const season = s.year;
   const since = s.backfill_stage_at ? Date.now() - Date.parse(s.backfill_stage_at) : Number.POSITIVE_INFINITY;
   const setStage = (stage: string, done = false) =>
@@ -81,4 +81,42 @@ export async function advanceBackfill(env: Env, enqueueBulk: (m: SyncMessage[]) 
     return `${season}: matches in progress`;
   }
   return null;
+}
+
+const REPAIR_KEY = "backfill/repair";
+const MAX_REPAIRS_PER_EVENT = 3;
+
+/**
+ * Once an hour while no backfill is pending: re-queue historical events whose most recent sync
+ * failed (transient D1/network errors, or retries exhausted before a fix shipped). Each event is
+ * retried at most MAX_REPAIRS_PER_EVENT times so a permanently broken one can't loop forever.
+ */
+async function repairFailedEvents(env: Env, enqueueBulk: (m: SyncMessage[]) => Promise<void>) {
+  const last = await env.DB.prepare("SELECT last_checked_at FROM sync_state WHERE key = ?")
+    .bind(REPAIR_KEY)
+    .first<{ last_checked_at: string | null }>();
+  if (last?.last_checked_at && Date.now() - Date.parse(last.last_checked_at) < 60 * MIN) return null;
+
+  const { results } = await env.DB.prepare(
+    `SELECT r.target FROM sync_runs r
+     WHERE r.job = 'eventMatches' AND r.target LIKE '~%/%' AND r.error IS NOT NULL
+       AND r.id = (SELECT MAX(x.id) FROM sync_runs x WHERE x.job = 'eventMatches' AND x.target = r.target)
+       AND (SELECT COUNT(*) FROM sync_runs y WHERE y.job = 'eventMatches' AND y.target = r.target) < ?
+     GROUP BY r.target LIMIT 300`,
+  )
+    .bind(MAX_REPAIRS_PER_EVENT + 5) // 5 = the queue's own attempts on the first pass
+    .all<{ target: string }>();
+  const msgs: SyncMessage[] = results.flatMap(({ target }) => {
+    const m = /^~(\d{4})\/([A-Z0-9]+)$/.exec(target);
+    return m
+      ? [{ job: "eventMatches" as const, season: Number(m[1]), code: m[2] as string, force: true }]
+      : [];
+  });
+  if (msgs.length) await enqueueBulk(msgs);
+  await env.DB.prepare(
+    "INSERT INTO sync_state (key, last_checked_at) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET last_checked_at = ?2",
+  )
+    .bind(REPAIR_KEY, nowIso())
+    .run();
+  return msgs.length ? `repair: re-queued ${msgs.length} failed events` : null;
 }
