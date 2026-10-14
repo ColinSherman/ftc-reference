@@ -1,0 +1,6 @@
+# Copy to .dev.vars for local dev. Real values for production go in `wrangler secret put`.
+FTC_API_USER=your-ftc-api-username
+FTC_API_TOKEN=your-ftc-api-token
+ADMIN_TOKEN=dev-admin-token
+# Uncomment to sync from the local mock (node scripts/mock-ftc-api.mjs) instead of the real API:
+# FTC_API_BASE=http://localhost:8790/v2.0
