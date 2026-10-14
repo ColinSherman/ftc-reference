@@ -6,9 +6,9 @@ Fast, dense FIRST Tech Challenge stats and scouting, styled like Baseball-Refere
 
 | Path | What it is |
 |---|---|
-| `packages/db/migrations` | D1 schema (hand-written SQL, `STRICT` tables). `0000_core` is season-agnostic; `0001_s2026_biobuzz` holds BIOBUZZ score and stat tables. |
+| `packages/db/migrations` | D1 schema (hand-written SQL, `STRICT` tables). Scores and stats live in season-keyed generic tables (`match_scores`, `team_event_stats`, `team_season_stats`); raw API JSON is kept per alliance. |
 | `packages/ftc-api` | Typed FTC Events API client: Basic auth, `If-Modified-Since`, an HTML-instead-of-JSON guard, and retry/backoff. |
-| `packages/seasons` | Per-season logic: API score → row mapping, OPR components, match-breakdown rows. |
+| `packages/seasons` | One descriptor per season, from SKYSTONE (2019) to BIOBUZZ (2026). Each defines the point formulas (auto/endgame/no-penalty/total/penalties), four headline OPR components (`c1`..`c4`) and the match breakdown rows. Adding a season means adding one descriptor. |
 | `packages/stats` | OPR via ridge-regularised least squares (Cholesky). |
 | `apps/sync` | `ftcref-sync` Worker: cron planner → Queue → jobs that write D1, archive raw responses to R2, and bump cache versions in KV. |
 | `apps/web` | `ftcref-web` Worker: Hono JSX server-rendered HTML, near-zero client JS, version-keyed edge cache. |
@@ -33,6 +33,20 @@ The FTC API has no webhooks, so we poll, and poll cheaply.
 - `Last-Modified` values are saved only after the data is written, so a failed write gets retried.
 
 **Observability:** `GET /admin/runs` on the sync Worker shows the last 100 jobs: requests made, 304 count, rows written and time taken.
+
+## Seasons and backfill
+
+Every season since 2019 is loaded through the same pipeline. Historical seasons go through their own queue (`ftcref-backfill`), throttled to about 4 requests per second per consumer, so live polling of the current season never waits behind them.
+
+A per-minute state machine in `apps/sync/src/backfill.ts` processes seasons one at a time, newest first:
+
+1. Queue the season's events, teams and leagues.
+2. Once events have landed, queue matches and awards for every competition event.
+3. Once the queue has been quiet for 5 minutes, mark the season done.
+
+`/admin/status` shows progress. `POST /admin/backfill?season=YYYY` restarts a season. Both use the admin bearer token.
+
+Remote events (2020–21) have one team per match. They are stored with the team number in `matches.series`, and their match URLs look like `q3t12345`.
 
 ## Local development
 
