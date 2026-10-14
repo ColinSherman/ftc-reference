@@ -8,6 +8,16 @@ import { f1, f2, fmtDateRange, Layout, Table, wlt } from "./views/layout";
 
 const app = new Hono<{ Bindings: Env }>({ strict: false });
 
+// One canonical host, so the edge cache and search engines see a single copy of each page.
+app.use("*", async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.hostname === "www.ftc-reference.com") {
+    url.hostname = "ftc-reference.com";
+    return c.redirect(url.toString(), 301);
+  }
+  await next();
+});
+
 app.route("/teams", teamRoutes);
 app.route("/events", eventRoutes);
 app.route("/events", matchRoutes);

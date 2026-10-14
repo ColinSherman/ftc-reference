@@ -6,6 +6,11 @@
   "main": "src/index.tsx",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
+  // Custom Domains create the DNS records + certs automatically. www 301s to the apex (see index.tsx).
+  "routes": [
+    { "pattern": "ftc-reference.com", "custom_domain": true },
+    { "pattern": "www.ftc-reference.com", "custom_domain": true }
+  ],
   "observability": { "enabled": true, "head_sampling_rate": 0.1 },
   "d1_databases": [
     {
