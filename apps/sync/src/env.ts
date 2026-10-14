@@ -17,4 +17,6 @@ export type SyncMessage =
   | { job: "eventMatches"; season: number; code: string; force?: boolean }
   | { job: "awards"; season: number; code: string; force?: boolean }
   | { job: "leagues"; season: number }
-  | { job: "leagueMembers"; season: number; region: string; code: string };
+  | { job: "leagueMembers"; season: number; region: string; code: string }
+  | { job: "avatars"; cmpYear: number }
+  | { job: "avatarFetch"; cmpYear: number; refs: { team: number; key: string; path: string }[] };

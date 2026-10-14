@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
+import { Av, eventStatus, heatScale, StatBox, StatusPill, TeamName, Th } from "../views/ui";
 
 interface EventRow {
   season: number;
@@ -17,7 +18,6 @@ interface EventRow {
   region_code: string | null;
   league_code: string | null;
   live_stream_url: string | null;
-  remote: number;
 }
 
 interface MatchRow {
@@ -31,9 +31,10 @@ interface MatchRow {
   blue_np: number | null;
   winner: string | null;
   played: number;
-  scheduled_at: string | null;
-  teams: string; // "Red1:123,Red2:456,…"
+  teams: string | null; // "Red1:123,Red2:456,…"
 }
+
+type Stat = Record<string, number | null> & { team: number; name_short: string | null; av: string | null };
 
 export const eventRoutes = new Hono<{ Bindings: Env }>();
 
@@ -43,17 +44,22 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) =>
     const { results } = await db(c)
       .prepare(
         `SELECT e.code, e.name, e.type_name, e.city, e.state_prov, e.country, e.date_start, e.date_end,
-                (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams
+                (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams,
+                (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played
          FROM events e WHERE e.season = ? ORDER BY e.date_start, e.name`,
       )
       .bind(season)
-      .all<EventRow & { teams: number }>();
+      .all<EventRow & { teams: number; played: number }>();
+    const today = new Date().toISOString().slice(0, 10);
+    const live = results.filter((e) => eventStatus(e.date_start, e.date_end, today) === "live").length;
     return c.html(
       <Layout title={`${season} Events`}>
         <h1>
           {season}–{String(season + 1).slice(2)} Events
         </h1>
-        <p class="note">{results.length} events. Click a column to sort.</p>
+        <p class="sitestats">
+          {results.length.toLocaleString("en-US")} events · {live} live now · click a column to sort
+        </p>
         <Table>
           <thead>
             <tr>
@@ -62,6 +68,8 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) =>
               <th class="l">Type</th>
               <th class="l">Location</th>
               <th>Teams</th>
+              <th title="Matches with results">Played</th>
+              <th class="l">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -76,6 +84,10 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) =>
                 <td class="l">{e.type_name}</td>
                 <td class="l">{[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}</td>
                 <td>{e.teams || ""}</td>
+                <td>{e.played || ""}</td>
+                <td class="l">
+                  <StatusPill s={eventStatus(e.date_start, e.date_end, today)} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -90,12 +102,13 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
   const code = c.req.param("code").toUpperCase();
   return cached(c, { versions: [`event:${season}:${code}`], ttl: VERSIONED_TTL }, async () => {
     const d = db(c);
-    const [evR, rankR, matchR, statR, allyR, awardR] = await d.batch([
+    const [evR, rankR, matchR, statR, allyR, awardR, teamsR] = await d.batch([
       d.prepare("SELECT * FROM events WHERE season = ? AND code = ?").bind(season, code),
       d
         .prepare(
-          `SELECT r.*, t.name_short, s.opr_np FROM rankings r
+          `SELECT r.*, t.name_short, s.opr_np, av.key AS av FROM rankings r
            LEFT JOIN teams t ON t.number = r.team
+           LEFT JOIN team_avatars av ON av.team = r.team
            LEFT JOIN s2026_team_event_stats s ON s.event_code = r.event_code AND s.team = r.team
            WHERE r.season = ? AND r.event_code = ? ORDER BY r.rank`,
         )
@@ -103,7 +116,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       d
         .prepare(
           `SELECT m.id, m.level, m.series, m.match_number, m.red_score, m.blue_score, m.red_np, m.blue_np,
-                  m.winner, m.played, m.scheduled_at,
+                  m.winner, m.played,
                   (SELECT group_concat(station || ':' || team) FROM match_teams mt WHERE mt.match_id = m.id) AS teams
            FROM matches m WHERE m.season = ? AND m.event_code = ?
            ORDER BY CASE m.level WHEN 'Q' THEN 0 ELSE 1 END, m.series, m.match_number`,
@@ -111,7 +124,9 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         .bind(season, code),
       d
         .prepare(
-          `SELECT s.*, t.name_short FROM s2026_team_event_stats s LEFT JOIN teams t ON t.number = s.team
+          `SELECT s.*, t.name_short, av.key AS av FROM s2026_team_event_stats s
+           LEFT JOIN teams t ON t.number = s.team
+           LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.event_code = ? ORDER BY s.opr_np DESC`,
         )
         .bind(code),
@@ -120,23 +135,35 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         .bind(season, code),
       d
         .prepare(
-          `SELECT a.*, t.name_short FROM awards a LEFT JOIN teams t ON t.number = a.team
+          `SELECT a.*, t.name_short, av.key AS av FROM awards a
+           LEFT JOIN teams t ON t.number = a.team
+           LEFT JOIN team_avatars av ON av.team = a.team
            WHERE a.season = ? AND a.event_code = ? ORDER BY a.award_id, a.series`,
+        )
+        .bind(season, code),
+      d
+        .prepare(
+          `SELECT et.team, t.name_short, av.key AS av FROM event_teams et
+           LEFT JOIN teams t ON t.number = et.team
+           LEFT JOIN team_avatars av ON av.team = et.team
+           WHERE et.season = ? AND et.event_code = ?`,
         )
         .bind(season, code),
     ]);
     const ev = evR?.results[0] as EventRow | undefined;
-    if (!ev)
+    if (!ev) {
       return c.html(
         <Layout title="Event not found">
           <h1>Event {code} not found</h1>
         </Layout>,
         404,
       );
+    }
 
     type Rank = {
       team: number;
       name_short: string | null;
+      av: string | null;
       rank: number;
       wins: number;
       losses: number;
@@ -147,7 +174,6 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       sort3: number;
       opr_np: number | null;
     };
-    type Stat = Record<string, number | null> & { team: number; name_short: string | null };
     const ranks = rankR?.results as Rank[];
     const matches = matchR?.results as MatchRow[];
     const stats = statR?.results as unknown as Stat[];
@@ -162,8 +188,48 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       name: string;
       team: number;
       name_short: string | null;
+      av: string | null;
       person_name: string | null;
     }[];
+    const roster = new Map(
+      ((teamsR?.results ?? []) as { team: number; name_short: string | null; av: string | null }[]).map(
+        (t) => [t.team, t],
+      ),
+    );
+
+    const played = matches.filter((m) => m.played);
+    let high: { np: number; m: MatchRow } | null = null;
+    for (const m of played) {
+      for (const np of [m.red_np, m.blue_np]) if (np != null && (!high || np > high.np)) high = { np, m };
+    }
+    const qualNps = played
+      .filter((m) => m.level === "Q")
+      .flatMap((m) => [m.red_np, m.blue_np])
+      .filter((x): x is number => x != null);
+    const avgNp = qualNps.length ? qualNps.reduce((a, b) => a + b, 0) / qualNps.length : null;
+    const status = eventStatus(ev.date_start, ev.date_end);
+
+    const rankHeat = heatScale(ranks.map((r) => r.opr_np));
+    const col = (k: string, invert = false) =>
+      heatScale(
+        stats.map((s) => s[k]),
+        invert,
+      );
+    const H = {
+      np: col("opr_np"),
+      auto: col("opr_auto"),
+      teleop: col("opr_teleop"),
+      tips: col("opr_tips"),
+      hive: col("opr_hive"),
+      flower: col("opr_flower"),
+      garden: col("opr_garden"),
+      park: col("opr_park"),
+      dpr: col("dpr", true),
+      ccwm: col("ccwm"),
+      avg: col("avg_np"),
+      max: col("max_np"),
+      rp: col("rp_avg"),
+    };
 
     return c.html(
       <Layout
@@ -173,7 +239,9 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         <div class="crumbs">
           <a href={`/events/${season}`}>{season} Events</a> › {code}
         </div>
-        <h1>{ev.name}</h1>
+        <h1>
+          {ev.name} <StatusPill s={status} />
+        </h1>
         <div class="bio">
           <div>
             <b>Dates:</b> {fmtDateRange(ev.date_start, ev.date_end)}
@@ -198,6 +266,35 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
             <a href={`https://ftc-events.firstinspires.org/${season}/${code}`}>FIRST event page</a>
           </div>
         </div>
+        <div class="sbr">
+          <StatBox label="Teams" value={roster.size || ranks.length || "–"} />
+          <StatBox label="Matches" value={played.length} sub={`of ${matches.length} scheduled`} />
+          <StatBox
+            label="High score (NP)"
+            value={high ? high.np : "–"}
+            sub={
+              high && (
+                <a
+                  href={`/events/${season}/${code}/${matchSlug(high.m.level, high.m.series, high.m.match_number)}`}
+                >
+                  {matchLabel(high.m.level, high.m.series, high.m.match_number)}
+                </a>
+              )
+            }
+          />
+          <StatBox
+            label="Avg qual NP"
+            value={avgNp == null ? "–" : avgNp.toFixed(1)}
+            tip="Average alliance no-penalty score in qualification matches"
+          />
+          {stats[0] && (
+            <StatBox
+              label="Top NP OPR"
+              value={f1(stats[0].opr_np)}
+              sub={<a href={`/teams/${stats[0].team}`}>{stats[0].team}</a>}
+            />
+          )}
+        </div>
         <div class="tabs">
           <a href="#rankings">Rankings</a>
           <a href="#matches">Matches</a>
@@ -213,15 +310,15 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
           <Table>
             <thead>
               <tr>
-                <th>Rk</th>
+                <Th k="Rk" />
                 <th>Team</th>
                 <th class="l">Name</th>
-                <th>W-L-T</th>
-                <th>RS</th>
-                <th>TB1</th>
-                <th>TB2</th>
-                <th>Pl</th>
-                <th>NP OPR</th>
+                <Th k="W-L-T" />
+                <Th k="RS" />
+                <Th k="TB1" />
+                <Th k="TB2" />
+                <Th k="Pl" />
+                <Th k="NP OPR" />
               </tr>
             </thead>
             <tbody>
@@ -231,13 +328,17 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                   <td>
                     <a href={`/teams/${r.team}`}>{r.team}</a>
                   </td>
-                  <td class="l">{r.name_short}</td>
+                  <td class="l">
+                    <TeamName team={r.team} name={r.name_short} av={r.av} />
+                  </td>
                   <td data-v={r.wins + r.ties / 2}>{wlt(r.wins, r.losses, r.ties)}</td>
                   <td>{f2(r.sort1)}</td>
                   <td>{f2(r.sort2)}</td>
                   <td>{f2(r.sort3)}</td>
                   <td>{r.played}</td>
-                  <td>{f1(r.opr_np)}</td>
+                  <td class="ht" style={rankHeat(r.opr_np)}>
+                    {f1(r.opr_np)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -255,52 +356,85 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         {stats.length === 0 ? (
           <p class="note">Stats appear after the first scored qualification match.</p>
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <th>Team</th>
-                <th class="l">Name</th>
-                <th>W-L-T</th>
-                <th>NP OPR</th>
-                <th>Auto</th>
-                <th>TeleOp</th>
-                <th>Tips</th>
-                <th>Hive</th>
-                <th>Flower</th>
-                <th>Garden</th>
-                <th>Park</th>
-                <th>DPR</th>
-                <th>CCWM</th>
-                <th>Avg NP</th>
-                <th>Max NP</th>
-                <th>RP/M</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.map((s) => (
+          <>
+            <p class="note">
+              Shaded cells are above the event median; darker is better. Hover a header for its definition.
+            </p>
+            <Table>
+              <thead>
                 <tr>
-                  <td>
-                    <a href={`/teams/${s.team}`}>{s.team}</a>
-                  </td>
-                  <td class="l">{s.name_short}</td>
-                  <td data-v={s.wins}>{wlt(s.wins ?? 0, s.losses ?? 0, s.ties ?? 0)}</td>
-                  <td class="w">{f1(s.opr_np)}</td>
-                  <td>{f1(s.opr_auto)}</td>
-                  <td>{f1(s.opr_teleop)}</td>
-                  <td>{f2(s.opr_tips)}</td>
-                  <td>{f1(s.opr_hive)}</td>
-                  <td>{f1(s.opr_flower)}</td>
-                  <td>{f1(s.opr_garden)}</td>
-                  <td>{f1(s.opr_park)}</td>
-                  <td>{f1(s.dpr)}</td>
-                  <td>{f1(s.ccwm)}</td>
-                  <td>{f1(s.avg_np)}</td>
-                  <td>{s.max_np}</td>
-                  <td>{f2(s.rp_avg)}</td>
+                  <th>Team</th>
+                  <th class="l">Name</th>
+                  <Th k="W-L-T" />
+                  <Th k="NP OPR" />
+                  <Th k="Auto" />
+                  <Th k="TeleOp" />
+                  <Th k="Tips" />
+                  <Th k="Hive" />
+                  <Th k="Flower" />
+                  <Th k="Garden" />
+                  <Th k="Park" />
+                  <Th k="DPR" />
+                  <Th k="CCWM" />
+                  <Th k="Avg NP" />
+                  <Th k="Max NP" />
+                  <Th k="RP/M" />
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {stats.map((s) => (
+                  <tr>
+                    <td>
+                      <a href={`/teams/${s.team}`}>{s.team}</a>
+                    </td>
+                    <td class="l">
+                      <TeamName team={s.team} name={s.name_short} av={s.av} />
+                    </td>
+                    <td data-v={s.wins}>{wlt(s.wins ?? 0, s.losses ?? 0, s.ties ?? 0)}</td>
+                    <td class="ht w" style={H.np(s.opr_np)}>
+                      {f1(s.opr_np)}
+                    </td>
+                    <td class="ht" style={H.auto(s.opr_auto)}>
+                      {f1(s.opr_auto)}
+                    </td>
+                    <td class="ht" style={H.teleop(s.opr_teleop)}>
+                      {f1(s.opr_teleop)}
+                    </td>
+                    <td class="ht" style={H.tips(s.opr_tips)}>
+                      {f2(s.opr_tips)}
+                    </td>
+                    <td class="ht" style={H.hive(s.opr_hive)}>
+                      {f1(s.opr_hive)}
+                    </td>
+                    <td class="ht" style={H.flower(s.opr_flower)}>
+                      {f1(s.opr_flower)}
+                    </td>
+                    <td class="ht" style={H.garden(s.opr_garden)}>
+                      {f1(s.opr_garden)}
+                    </td>
+                    <td class="ht" style={H.park(s.opr_park)}>
+                      {f1(s.opr_park)}
+                    </td>
+                    <td class="ht" style={H.dpr(s.dpr)}>
+                      {f1(s.dpr)}
+                    </td>
+                    <td class="ht" style={H.ccwm(s.ccwm)}>
+                      {f1(s.ccwm)}
+                    </td>
+                    <td class="ht" style={H.avg(s.avg_np)}>
+                      {f1(s.avg_np)}
+                    </td>
+                    <td class="ht" style={H.max(s.max_np)}>
+                      {s.max_np}
+                    </td>
+                    <td class="ht" style={H.rp(s.rp_avg)}>
+                      {f2(s.rp_avg)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </>
         )}
 
         <h2 id="alliances">Alliances</h2>
@@ -311,10 +445,10 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Captain</th>
-                <th>Pick 1</th>
-                <th>Pick 2</th>
-                <th>Backup</th>
+                <th class="l">Captain</th>
+                <th class="l">Pick 1</th>
+                <th class="l">Pick 2</th>
+                <th class="l">Backup</th>
               </tr>
             </thead>
             <tbody>
@@ -322,7 +456,17 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                 <tr>
                   <td>{a.number}</td>
                   {[a.captain, a.pick1, a.pick2, a.backup].map((t) => (
-                    <td>{t ? <a href={`/teams/${t}`}>{t}</a> : ""}</td>
+                    <td class="l">
+                      {t ? (
+                        <>
+                          <Av team={t} k={roster.get(t)?.av} />
+                          <a href={`/teams/${t}`}>{t}</a>{" "}
+                          <span class="note">{roster.get(t)?.name_short}</span>
+                        </>
+                      ) : (
+                        ""
+                      )}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -347,7 +491,10 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                 <tr>
                   <td class="l">{a.name}</td>
                   <td>{a.team ? <a href={`/teams/${a.team}`}>{a.team}</a> : ""}</td>
-                  <td class="l">{a.person_name ?? a.name_short}</td>
+                  <td class="l">
+                    {a.person_name ??
+                      (a.team ? <TeamName team={a.team} name={a.name_short} av={a.av} /> : "")}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -365,23 +512,22 @@ function MatchTable(props: { season: number; code: string; matches: MatchRow[] }
       .filter((s) => s.startsWith(ally))
       .sort()
       .map((s) => Number(s.split(":")[1]));
+  const npHeat = heatScale(props.matches.flatMap((m) => [m.red_np, m.blue_np]));
   return (
     <Table>
       <thead>
         <tr>
           <th class="l">Match</th>
+          <th class="l">Red</th>
+          <th class="l">Blue</th>
           <th>Red</th>
           <th>Blue</th>
-          <th>Red</th>
-          <th>Blue</th>
-          <th>Red NP</th>
-          <th>Blue NP</th>
+          <th title="Red no-penalty score">Red NP</th>
+          <th title="Blue no-penalty score">Blue NP</th>
         </tr>
       </thead>
       <tbody>
         {props.matches.map((m) => {
-          const red = side(m.teams ?? "", "Red");
-          const blue = side(m.teams ?? "", "Blue");
           const teamLinks = (ts: number[]) =>
             ts.map((t, i) => (
               <>
@@ -398,12 +544,16 @@ function MatchTable(props: { season: number; code: string; matches: MatchRow[] }
                   {matchLabel(m.level, m.series, m.match_number)}
                 </a>
               </td>
-              <td class="r">{teamLinks(red)}</td>
-              <td class="b">{teamLinks(blue)}</td>
+              <td class="l r">{teamLinks(side(m.teams ?? "", "Red"))}</td>
+              <td class="l b">{teamLinks(side(m.teams ?? "", "Blue"))}</td>
               <td class={`r${m.winner === "R" ? " w" : ""}`}>{m.played ? m.red_score : ""}</td>
               <td class={`b${m.winner === "B" ? " w" : ""}`}>{m.played ? m.blue_score : ""}</td>
-              <td>{m.red_np ?? ""}</td>
-              <td>{m.blue_np ?? ""}</td>
+              <td class="ht" style={npHeat(m.red_np)}>
+                {m.red_np ?? ""}
+              </td>
+              <td class="ht" style={npHeat(m.blue_np)}>
+                {m.blue_np ?? ""}
+              </td>
             </tr>
           );
         })}

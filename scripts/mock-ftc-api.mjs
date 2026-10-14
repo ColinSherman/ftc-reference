@@ -12,7 +12,10 @@ const strength = { 1001: 60, 1002: 45, 1003: 30, 1004: 20, 1005: 55, 1006: 25, 1
 const teams = Object.keys(strength).map(Number);
 
 let seed = 42;
-const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const rnd = () => {
+  seed = (seed * 16807) % 2147483647;
+  return seed / 2147483647;
+};
 
 function alliance(color, [a, b], number) {
   const s = (strength[a] + strength[b]) / 100;
@@ -164,7 +167,7 @@ const teamObjs = teams.map((t) => ({
 }));
 
 const routes = {
-  [`/v2.0/2026/events`]: {
+  "/v2.0/2026/events": {
     events: [
       {
         code: CODE,
@@ -193,7 +196,7 @@ const routes = {
       },
     ],
   },
-  [`/v2.0/2026/teams?page=1`]: {
+  "/v2.0/2026/teams?page=1": {
     teams: teamObjs,
     teamCountTotal: 8,
     teamCountPage: 8,
@@ -218,7 +221,7 @@ const routes = {
       { awardId: 1, eventCode: CODE, name: "Inspire Award", series: 1, teamNumber: 1001, person: null },
     ],
   },
-  [`/v2.0/2026/leagues`]: { leagues: [] },
+  "/v2.0/2026/leagues": { leagues: [] },
 };
 
 let hits = 0,
@@ -246,5 +249,5 @@ createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "application/json", "Last-Modified": LAST_MODIFIED });
   res.end(JSON.stringify(body));
 }).listen(8790, () =>
-  console.log("mock FTC API on http://localhost:8790/v2.0  (event", CODE, "on", today + ")"),
+  console.log("mock FTC API on http://localhost:8790/v2.0  (event", CODE, "on", `${today})`),
 );

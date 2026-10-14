@@ -13,11 +13,11 @@ export async function cached(
   render: () => Promise<Response>,
 ): Promise<Response> {
   if (c.env.DEV === "1") return render();
-  const vers = opts.versions?.length
-    ? await Promise.all(opts.versions.map((k) => c.env.CACHE_VER.get(k, { cacheTtl: 60 })))
-    : [];
+  // Every page shows avatars, so the avatar-set version is always part of the key.
+  const keys = ["avatars", ...(opts.versions ?? [])];
+  const vers = await Promise.all(keys.map((k) => c.env.CACHE_VER.get(k, { cacheTtl: 60 })));
   const url = new URL(c.req.url);
-  if (vers.length) url.searchParams.set("__v", vers.map((v) => v ?? "0").join("."));
+  url.searchParams.set("__v", vers.map((v) => v ?? "0").join("."));
   url.searchParams.set("__d", c.env.CF_VERSION?.id ?? "dev");
   const key = new Request(url.toString(), { method: "GET" });
   const cache = caches.default;

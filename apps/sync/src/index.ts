@@ -2,6 +2,7 @@ import { nowIso } from "@ftcref/db";
 import { FtcApi } from "@ftcref/ftc-api";
 import { CURRENT_SEASON } from "@ftcref/seasons";
 import type { Env, SyncMessage } from "./env";
+import { fetchAvatarBatch, syncAvatars } from "./jobs/avatars";
 import { syncAwards } from "./jobs/awards";
 import { syncEventMatches } from "./jobs/eventMatches";
 import { syncEvents } from "./jobs/events";
@@ -10,17 +11,37 @@ import { syncTeamsPage } from "./jobs/teams";
 import { planLive, recentEvents } from "./planner";
 
 const season = CURRENT_SEASON;
+/** The v3 API and avatar files number seasons by Championship year (BIOBUZZ 2026-27 → 2027). */
+const cmpYear = season + 1;
 
+/** Queues caps sendBatch at 100 messages and 256 KB; split on whichever comes first. */
 async function enqueue(env: Env, msgs: SyncMessage[]) {
-  for (let i = 0; i < msgs.length; i += 100) {
-    await env.SYNC_QUEUE.sendBatch(msgs.slice(i, i + 100).map((body) => ({ body })));
+  let batch: { body: SyncMessage }[] = [];
+  let bytes = 0;
+  for (const body of msgs) {
+    const size = JSON.stringify(body).length + 100; // + per-message overhead
+    if (batch.length && (batch.length === 100 || bytes + size > 200_000)) {
+      await env.SYNC_QUEUE.sendBatch(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push({ body });
+    bytes += size;
   }
+  if (batch.length) await env.SYNC_QUEUE.sendBatch(batch);
 }
 
 async function runJob(env: Env, msg: SyncMessage) {
   const api = new FtcApi({ user: env.FTC_API_USER, token: env.FTC_API_TOKEN, baseUrl: env.FTC_API_BASE });
   const started = Date.now();
-  const target = "code" in msg ? msg.code : "page" in msg ? String(msg.page) : null;
+  const target =
+    "code" in msg
+      ? msg.code
+      : "page" in msg
+        ? String(msg.page)
+        : "refs" in msg
+          ? `${msg.refs.length} avatars`
+          : null;
   let rows = 0;
   let error: string | null = null;
   try {
@@ -58,6 +79,12 @@ async function runJob(env: Env, msg: SyncMessage) {
       }
       case "leagueMembers":
         rows = await syncLeagueMembers(env, api, msg.season, msg.region, msg.code);
+        break;
+      case "avatars":
+        rows = (await syncAvatars(env, msg.cmpYear, (m) => enqueue(env, m))).changed;
+        break;
+      case "avatarFetch":
+        rows = await fetchAvatarBatch(env, msg.cmpYear, msg.refs);
         break;
     }
   } catch (e) {
@@ -102,20 +129,29 @@ async function backfill(env: Env, step: string | null) {
     { job: "events", season },
     { job: "teams", season, page: 1 },
     { job: "leagues", season },
+    { job: "avatars", cmpYear },
   ]);
-  return { enqueued: ["events", "teams", "leagues"], next: "POST /admin/backfill?step=matches" };
+  return { enqueued: ["events", "teams", "leagues", "avatars"], next: "POST /admin/backfill?step=matches" };
 }
 
 export default {
   async scheduled(controller, env, ctx) {
     switch (controller.cron) {
-      case "* * * * *":
-        await enqueue(env, await planLive(env, season));
+      case "* * * * *": {
+        const msgs = await planLive(env, season);
+        // Self-heal: if avatars have never synced (fresh deploy), start now rather than at the next 6h tick.
+        const av = await env.DB.prepare("SELECT 1 FROM sync_state WHERE key = ?")
+          .bind(`avatars/${cmpYear}.css`)
+          .first();
+        if (!av) msgs.push({ job: "avatars", cmpYear });
+        await enqueue(env, msgs);
         break;
+      }
       case "0 */6 * * *":
         await enqueue(env, [
           { job: "events", season },
           { job: "leagues", season },
+          { job: "avatars", cmpYear },
         ]);
         break;
       case "30 9 * * *": {

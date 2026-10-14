@@ -25,7 +25,7 @@ export function Layout(props: { title: string; description?: string; children: C
               <a href="/seasons/2026/leaders">Leaders</a>
             </nav>
             <form action="/search">
-              <input name="q" type="search" placeholder="Team # or name, event…" aria-label="Search" />
+              <input name="q" type="search" placeholder="Search teams, events…  ( / )" aria-label="Search" />
             </form>
             <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
               ◐ Auto
