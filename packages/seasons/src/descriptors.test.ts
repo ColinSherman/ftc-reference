@@ -32,16 +32,22 @@ describe("season descriptors", () => {
     });
   });
 
-  it("computes NP for seasons without a pre-penalty total", () => {
+  it("rebuilds the SKYSTONE endgame the API reports as 0", () => {
+    // Real 2019 alliance: 66 auto + 48 driver-controlled + capstone 15 + foundation 15 + one robot parked 5.
     const sky = scoreColumns(getSeason(2019), {
-      autonomousPoints: 20,
-      driverControlledPoints: 40,
-      endGamePoints: 15,
-      totalPoints: 95,
+      autonomousPoints: 66,
+      driverControlledPoints: 48,
+      endGamePoints: 0,
+      parkingPoints: 0,
+      capstonePoints: 15,
+      foundationMoved: true,
+      robot1Parked: true,
+      robot2Parked: false,
+      totalPoints: 149,
       minorPenalties: 1,
       majorPenalties: 0,
     });
-    expect(sky).toMatchObject({ np: 75, teleop: 55, total: 95, fouls: 5 });
+    expect(sky).toMatchObject({ auto: 66, endgame: 35, np: 149, teleop: 83, total: 149, fouls: 5 });
   });
 
   it("tolerates missing fields", () => {

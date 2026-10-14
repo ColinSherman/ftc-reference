@@ -1,12 +1,18 @@
 import { type ApiScore, majors, minors, n, type SeasonDescriptor } from "./types";
 
-const yes = (v: unknown) => (v ? "✓" : "");
 const fouls = (lbl = "Fouls"): SeasonDescriptor["breakdown"] => [
   { label: `Minor ${lbl.toLowerCase()}`, value: minors, lower: true },
   { label: `Major ${lbl.toLowerCase()}`, value: majors, lower: true },
 ];
 
 // ---------------------------------------------------------------- 2019 SKYSTONE
+/**
+ * The API reports endGamePoints/parkingPoints as 0 for SKYSTONE, so rebuild the endgame from its
+ * parts: capstone bonus + foundation moved out of the building site (15) + 5 per parked robot.
+ */
+const skystoneEndgame = (a: ApiScore) =>
+  n(a.capstonePoints) + (a.foundationMoved ? 15 : 0) + (a.robot1Parked ? 5 : 0) + (a.robot2Parked ? 5 : 0);
+
 const skystone: SeasonDescriptor = {
   season: 2019,
   cmpYear: 2020,
@@ -15,10 +21,11 @@ const skystone: SeasonDescriptor = {
   kickoff: "2019-09-07",
   hasRemote: false,
   common: (a) => {
-    const np = n(a.autonomousPoints) + n(a.driverControlledPoints) + n(a.endGamePoints);
+    const eg = skystoneEndgame(a);
+    const np = n(a.autonomousPoints) + n(a.driverControlledPoints) + eg;
     return {
       auto: n(a.autonomousPoints),
-      endgame: n(a.endGamePoints),
+      endgame: eg,
       np,
       total: n(a.totalPoints),
       fouls: minors(a) * 5 + majors(a) * 20,
@@ -58,9 +65,9 @@ const skystone: SeasonDescriptor = {
     { label: "Skyscraper bonus", value: (a) => n(a.skyscraperBonusPoints) },
     { label: "Driver-controlled total", value: (a) => n(a.driverControlledPoints), sub: true },
     { label: "Capstone", value: (a) => n(a.capstonePoints) },
-    { label: "Foundation moved", value: (a) => yes(a.foundationMoved) },
-    { label: "Parking", value: (a) => n(a.parkingPoints) },
-    { label: "Endgame total", value: (a) => n(a.endGamePoints), sub: true },
+    { label: "Foundation moved out", value: (a) => (a.foundationMoved ? 15 : 0) },
+    { label: "Parking", value: (a) => (a.robot1Parked ? 5 : 0) + (a.robot2Parked ? 5 : 0) },
+    { label: "Endgame total", value: (a) => skystoneEndgame(a), sub: true },
     ...fouls("Penalties"),
   ],
 };
