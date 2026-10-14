@@ -1,12 +1,18 @@
 // Inlined into every page: no extra requests, no render blocking. Pages are edge-cached whole,
 // so inlining costs nothing on repeat views.
 
+// Dark tokens apply under the OS preference (unless the viewer forced light) or when forced dark.
+const DARK =
+  "--bg:#17181a;--fg:#e6e4dc;--muted:#9a988f;--line:#34352f;--head:#22231f;--zebra:#1c1d1a;--hi:#3a3520;" +
+  "--link:#8cbcf0;--brand:#8f3c14;--brand-fg:#fff3ea;--rule:#e07a3c;--dot:#ffb877;--red:#f08a80;--red-bg:#2e1b1a;" +
+  "--blue:#8fb2f0;--blue-bg:#1a2233;--pollen:#e0b040";
+
 export const CSS = `
 :root{--bg:#fbfaf5;--fg:#1d1d1b;--muted:#6b6a63;--line:#d9d6c8;--head:#efece0;--zebra:#f4f2ea;--hi:#fff6c9;
 --link:#0b4f8a;--brand:#a8481a;--brand-fg:#fffaf5;--rule:#a8481a;--dot:#ffc58a;--red:#b3261e;--red-bg:#fbe9e7;--blue:#1f4e9c;--blue-bg:#e7eefb;--pollen:#c58b00}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17181a;--fg:#e6e4dc;--muted:#9a988f;--line:#34352f;
---head:#22231f;--zebra:#1c1d1a;--hi:#3a3520;--link:#8cbcf0;--brand:#8f3c14;--brand-fg:#fff3ea;--rule:#e07a3c;--dot:#ffb877;--red:#f08a80;--red-bg:#2e1b1a;
---blue:#8fb2f0;--blue-bg:#1a2233;--pollen:#e0b040}}
+:root{color-scheme:light dark}:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){${DARK}}}
+:root[data-theme=dark]{${DARK}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 Verdana,Geneva,"DejaVu Sans",sans-serif}
@@ -17,7 +23,8 @@ h1{font-size:26px}h2{font-size:19px;border-bottom:2px solid var(--rule);padding-
 .top .in{max-width:1200px;margin:0 auto;padding:6px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 .top a{color:var(--brand-fg)}.logo{font:bold 20px Georgia,serif;letter-spacing:-.5px}.logo b{color:var(--dot)}
 .top nav{display:flex;gap:14px;font-size:12px}
-.top form{margin-left:auto}.top input{font:inherit;padding:3px 6px;width:220px;max-width:50vw;border:1px solid #000;border-radius:2px}
+.top form{margin-left:auto}
+.tt{font:inherit;font-size:12px;background:none;color:var(--brand-fg);border:1px solid rgba(255,255,255,.45);border-radius:2px;padding:2px 7px;cursor:pointer;white-space:nowrap}.tt:hover{background:rgba(255,255,255,.12)}.top input{font:inherit;padding:3px 6px;width:220px;max-width:50vw;border:1px solid #000;border-radius:2px}
 main{max-width:1200px;margin:0 auto;padding:10px 16px 40px}
 .crumbs{font-size:11px;color:var(--muted);margin-bottom:4px}
 .bio{display:flex;flex-wrap:wrap;gap:4px 24px;margin:4px 0 10px}.bio div{white-space:nowrap}.bio b{color:var(--muted);font-weight:normal}
@@ -40,7 +47,7 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .mx{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:0 32px;align-items:start}
 @media (max-width:900px){.mx{grid-template-columns:minmax(0,1fr)}}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
-@media (max-width:640px){.top form{margin-left:0;width:100%}.top input{width:100%;max-width:none}h1{font-size:22px}}
+@media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}}
 `.replace(/\n/g, "");
 
 /** Click-to-sort for every table.st. Numbers sort descending first (stats convention). */
@@ -60,3 +67,19 @@ export const FAVICON_SVG =
   '<path d="M6 12.5H31L6 22.5Z" fill="#c4561d"/></svg>';
 
 export const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}`;
+
+/** Runs in <head> before first paint so a saved theme never flashes the wrong colors. */
+export const THEME_HEAD_JS =
+  'try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}';
+
+/** Header button: cycles auto → light → dark, remembered per browser. */
+export const THEME_TOGGLE_JS = `(function(){var b=document.getElementById("tt");if(!b)return;
+var L={auto:"◐ Auto",light:"☀ Light",dark:"☾ Dark"},N={auto:"light",light:"dark",dark:"auto"};
+var cur=function(){return document.documentElement.dataset.theme||"auto"};
+var show=function(){var c=cur();b.textContent=L[c];b.title="Theme: "+c+" (click to change)"};show();
+b.addEventListener("click",function(){var n=N[cur()],r=document.documentElement;
+if(n==="auto")delete r.dataset.theme;else r.dataset.theme=n;
+try{n==="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",n)}catch(e){}show()})})();`.replace(
+  /\n/g,
+  "",
+);

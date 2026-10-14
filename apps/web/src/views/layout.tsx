@@ -1,6 +1,6 @@
 import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
-import { CSS, FAVICON_DATA_URI, SORT_JS } from "../assets";
+import { CSS, FAVICON_DATA_URI, SORT_JS, THEME_HEAD_JS, THEME_TOGGLE_JS } from "../assets";
 
 export function Layout(props: { title: string; description?: string; children: Child }) {
   return (
@@ -11,6 +11,7 @@ export function Layout(props: { title: string; description?: string; children: C
         <title>{props.title} | FTC-Reference</title>
         {props.description && <meta name="description" content={props.description} />}
         <link rel="icon" type="image/svg+xml" href={FAVICON_DATA_URI} />
+        <script>{raw(THEME_HEAD_JS)}</script>
         <style>{raw(CSS)}</style>
       </head>
       <body>
@@ -26,6 +27,9 @@ export function Layout(props: { title: string; description?: string; children: C
             <form action="/search">
               <input name="q" type="search" placeholder="Team # or name, event…" aria-label="Search" />
             </form>
+            <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
+              ◐ Auto
+            </button>
           </div>
         </div>
         <main>{props.children}</main>
@@ -34,7 +38,7 @@ export function Layout(props: { title: string; description?: string; children: C
           <a href="https://ftc-events.firstinspires.org/services/API">FIRST Tech Challenge Events API</a>.
           Non-commercial fan site; not affiliated with <i>FIRST</i>®. Stats recomputed as results post.
         </footer>
-        <script>{raw(SORT_JS)}</script>
+        <script>{raw(SORT_JS + THEME_TOGGLE_JS)}</script>
       </body>
     </html>
   );
