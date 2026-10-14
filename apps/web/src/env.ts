@@ -3,6 +3,7 @@ import type { Context } from "hono";
 export interface Env {
   DB: D1Database;
   CACHE_VER: KVNamespace;
+  CF_VERSION?: { id: string };
   /** "1" in local dev (.dev.vars) to bypass the edge HTML cache. */
   DEV?: string;
 }

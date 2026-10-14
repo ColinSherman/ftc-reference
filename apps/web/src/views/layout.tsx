@@ -1,6 +1,6 @@
 import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
-import { CSS, SORT_JS } from "../assets";
+import { CSS, FAVICON_DATA_URI, SORT_JS } from "../assets";
 
 export function Layout(props: { title: string; description?: string; children: Child }) {
   return (
@@ -10,6 +10,7 @@ export function Layout(props: { title: string; description?: string; children: C
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <title>{props.title} | FTC-Reference</title>
         {props.description && <meta name="description" content={props.description} />}
+        <link rel="icon" type="image/svg+xml" href={FAVICON_DATA_URI} />
         <style>{raw(CSS)}</style>
       </head>
       <body>

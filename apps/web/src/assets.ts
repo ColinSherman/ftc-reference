@@ -51,3 +51,12 @@ var asc=h.dataset.dir==="desc";[].forEach.call(h.parentNode.children,function(x)
 var v=function(r){var c=r.children[i];if(!c)return"";var s=c.dataset.v!=null?c.dataset.v:c.textContent.trim();var n=parseFloat(s.replace(/,/g,""));return isNaN(n)?s.toLowerCase():n};
 var rows=[].slice.call(b.rows).sort(function(a,c){var x=v(a),y=v(c);if(x===y)return 0;var r=typeof x==="number"&&typeof y==="number"?x-y:String(x)<String(y)?-1:1;return asc?r:-r});
 rows.forEach(function(r){b.appendChild(r)})});`.replace(/\n/g, "");
+
+/** Orange pennant. Inlined as a data URI in <head>; also served at /favicon.svg. */
+export const FAVICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+  '<rect x="3" y="1" width="3.5" height="30" rx="1.75" fill="#6b2f10"/>' +
+  '<path d="M6 2.5 31 12.5 6 22.5Z" fill="#f07a32"/>' +
+  '<path d="M6 12.5H31L6 22.5Z" fill="#c4561d"/></svg>';
+
+export const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}`;

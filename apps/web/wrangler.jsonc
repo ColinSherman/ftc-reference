@@ -20,5 +20,7 @@
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
+  // Deploy version id is part of the HTML cache key, so each deploy serves fresh markup.
+  "version_metadata": { "binding": "CF_VERSION" },
   "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }]
 }

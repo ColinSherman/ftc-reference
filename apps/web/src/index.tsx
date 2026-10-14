@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { FAVICON_SVG } from "./assets";
 import { cached } from "./cache";
 import { db, type Env, SEASON } from "./env";
 import { eventRoutes } from "./routes/event";
@@ -21,6 +22,13 @@ app.use("*", async (c, next) => {
 app.route("/teams", teamRoutes);
 app.route("/events", eventRoutes);
 app.route("/events", matchRoutes);
+
+const favicon = () =>
+  new Response(FAVICON_SVG, {
+    headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=604800, immutable" },
+  });
+app.get("/favicon.svg", favicon);
+app.get("/favicon.ico", favicon);
 
 app.get("/", (c) =>
   cached(c, { ttl: 60 }, async () => {

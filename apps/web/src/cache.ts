@@ -18,6 +18,7 @@ export async function cached(
     : [];
   const url = new URL(c.req.url);
   if (vers.length) url.searchParams.set("__v", vers.map((v) => v ?? "0").join("."));
+  url.searchParams.set("__d", c.env.CF_VERSION?.id ?? "dev");
   const key = new Request(url.toString(), { method: "GET" });
   const cache = caches.default;
 
