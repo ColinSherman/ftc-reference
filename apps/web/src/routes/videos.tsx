@@ -564,13 +564,40 @@ videoRoutes.post("/admin/channels", async (c) => {
     await c.env.DB.prepare(`UPDATE video_channels SET ${col} = 1 - ${col} WHERE channel_id = ?`)
       .bind(id)
       .run();
-  } else if (f.action === "scan-now" && c.env.YOUTUBE_API_KEY) {
-    const ch = await c.env.DB.prepare("SELECT trusted FROM video_channels WHERE channel_id = ?")
+  } else if (f.action === "scan-now") {
+    if (!c.env.YOUTUBE_API_KEY)
+      return c.html(
+        <Msg title="YOUTUBE_API_KEY is not set on ftcref-web" back="/admin/videos" />,
+        503,
+        noStore,
+      );
+    const ch = await c.env.DB.prepare("SELECT trusted, title FROM video_channels WHERE channel_id = ?")
       .bind(id)
-      .first<{ trusted: number }>();
+      .first<{ trusted: number; title: string | null }>();
     const yt = new YouTube(c.env.YOUTUBE_API_KEY);
-    const videos = await yt.playlistVideos(YouTube.uploadsPlaylist(id));
-    const r = await importVideos(c.env.DB, videos, { source: "scan", trusted: !!ch?.trusted });
+    let videos: YtVideo[];
+    let r: ImportResult;
+    try {
+      videos = await yt.playlistVideos(YouTube.uploadsPlaylist(id));
+      r = await importVideos(c.env.DB, videos, { source: "scan", trusted: !!ch?.trusted });
+    } catch (e) {
+      console.error("scan-now failed", e);
+      return c.html(
+        <Layout title="Scan failed">
+          <h1>Scan failed</h1>
+          <pre style="white-space:pre-wrap;font-size:12px">{(e as Error).message}</pre>
+          <p class="note">
+            A YouTube 403 usually means the YouTube Data API v3 isn't enabled for the key's Google Cloud
+            project, or the key's API restriction doesn't include it.
+          </p>
+          <p>
+            <a href="/admin/videos">Back</a>
+          </p>
+        </Layout>,
+        502,
+        noStore,
+      );
+    }
     for (const t of r.touched) {
       const [season, code] = t.split(":");
       if (season && code) await bump(c, season, code);
@@ -578,6 +605,21 @@ videoRoutes.post("/admin/channels", async (c) => {
     await c.env.DB.prepare("UPDATE video_channels SET last_scanned_at = ? WHERE channel_id = ?")
       .bind(now, id)
       .run();
+    return c.html(
+      <Layout title="Scan results">
+        <h1>Scanned {ch?.title ?? id}</h1>
+        <p class="sitestats">
+          {videos.length} uploads read · <b>{r.approved}</b> live now · <b>{r.pending}</b> waiting for review
+          · {videos.length - r.approved - r.pending} not matched (or already imported)
+        </p>
+        <p>
+          <a href="/admin/videos">Back to review queue</a>
+        </p>
+        <ImportTable result={r} />
+      </Layout>,
+      200,
+      noStore,
+    );
   } else if (f.action === "add" && c.env.YOUTUBE_API_KEY) {
     const yt = new YouTube(c.env.YOUTUBE_API_KEY);
     const src = parseYoutubeSource(String(f.url ?? "").replace(/^@/, "https://www.youtube.com/@"));
