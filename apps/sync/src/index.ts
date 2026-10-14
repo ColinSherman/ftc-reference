@@ -8,6 +8,7 @@ import { syncAwards } from "./jobs/awards";
 import { syncEventMatches } from "./jobs/eventMatches";
 import { syncEvents } from "./jobs/events";
 import { syncLeagueMembers, syncLeagues } from "./jobs/leagues";
+import { alignEventStreams } from "./jobs/streams";
 import { syncTeamsPage } from "./jobs/teams";
 import { scanVideoChannels } from "./jobs/videos";
 import { planLive, recentEvents } from "./planner";
@@ -100,6 +101,11 @@ async function runJob(env: Env, msg: SyncMessage, bulk: boolean, throttle?: Thro
       case "avatarFetch":
         rows = await fetchAvatarBatch(env, msg.cmpYear, msg.refs);
         break;
+      case "streamAlign": {
+        const r = await alignEventStreams(env);
+        rows = r.matches;
+        break;
+      }
       case "videoScan": {
         const r = await scanVideoChannels(env);
         rows = r.approved + r.pending;
@@ -137,6 +143,8 @@ export default {
           .bind(`avatars/${cmpYear}.css`)
           .first();
         if (!av) msgs.push({ job: "avatars", cmpYear });
+        // Livestream auto-timing every 20 minutes (no-op, and no quota, when nothing new needs it).
+        if (new Date().getUTCMinutes() % 20 === 7) msgs.push({ job: "streamAlign" });
         await enqueue(env, msgs);
         const step = await advanceBackfill(env, (m) => enqueueBulk(env, m));
         if (step) console.log("backfill", step);

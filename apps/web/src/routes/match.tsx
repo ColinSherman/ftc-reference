@@ -88,7 +88,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       d.prepare("SELECT alliance, np, detail FROM match_scores WHERE match_id = ?").bind(m.id),
       d
         .prepare(
-          "SELECT video_id, start_s, title, channel_title FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY votes DESC, id LIMIT 6",
+          "SELECT video_id, start_s, title, channel_title, source FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY source = 'auto_align', votes DESC, id LIMIT 6",
         )
         .bind(m.id),
     ]);
@@ -109,6 +109,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       start_s: number | null;
       title: string | null;
       channel_title: string | null;
+      source: string;
     }[];
     const video = videos[0];
     const addHref = `/videos/submit?match=${season}/${code}/${matchSlug(key.level, key.series, key.n)}`;
@@ -271,7 +272,11 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
                   title={video.title ?? "Match video"}
                 />
                 <p class="note">
-                  {video.channel_title && <>From {video.channel_title} · </>}
+                  {video.source === "auto_align" ? (
+                    <>Event livestream ({video.channel_title}), auto-timed from FIRST's match start · </>
+                  ) : (
+                    video.channel_title && <>From {video.channel_title} · </>
+                  )}
                   {videos.length > 1 &&
                     videos.slice(1).map((v, i) => (
                       <>
@@ -279,7 +284,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
                           href={`https://www.youtube.com/watch?v=${v.video_id}${v.start_s ? `&t=${v.start_s}` : ""}`}
                           rel="noopener"
                         >
-                          Angle {i + 2}
+                          {v.source === "auto_align" ? "Livestream" : `Angle ${i + 2}`}
                         </a>{" "}
                         ·{" "}
                       </>

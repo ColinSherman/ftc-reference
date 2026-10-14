@@ -117,8 +117,108 @@ export class YouTube {
       : null;
   }
 
+  /**
+   * Stream timing for up to 50 videos per call (1 unit). Non-live uploads come back with no
+   * liveStreamingDetails; their window is publish time + duration.
+   */
+  async streamDetails(ids: string[]): Promise<StreamDetails[]> {
+    type R = {
+      items?: {
+        id: string;
+        snippet: { title: string; channelId: string; channelTitle: string; publishedAt: string };
+        contentDetails?: { duration?: string };
+        liveStreamingDetails?: {
+          actualStartTime?: string;
+          actualEndTime?: string;
+          scheduledStartTime?: string;
+        };
+      }[];
+    };
+    const out: StreamDetails[] = [];
+    for (let i = 0; i < ids.length; i += 50) {
+      const r = await this.get<R>("videos", {
+        part: "snippet,contentDetails,liveStreamingDetails",
+        id: ids.slice(i, i + 50).join(","),
+      });
+      for (const v of r.items ?? []) {
+        out.push({
+          videoId: v.id,
+          title: v.snippet.title,
+          channelId: v.snippet.channelId,
+          channelTitle: v.snippet.channelTitle,
+          publishedAt: v.snippet.publishedAt,
+          liveStart: v.liveStreamingDetails?.actualStartTime ?? null,
+          liveEnd: v.liveStreamingDetails?.actualEndTime ?? null,
+          durationS: isoDurationToSeconds(v.contentDetails?.duration),
+        });
+      }
+    }
+    return out;
+  }
+
   /** A channel's uploads playlist id: UC… → UU…. */
   static uploadsPlaylist(channelId: string) {
     return `UU${channelId.slice(2)}`;
   }
+}
+
+export interface StreamDetails {
+  videoId: string;
+  title: string;
+  channelId: string;
+  channelTitle: string;
+  publishedAt: string;
+  liveStart: string | null;
+  liveEnd: string | null;
+  durationS: number | null;
+}
+
+/** "PT3H17M30S" → 11850. */
+export function isoDurationToSeconds(d: string | undefined): number | null {
+  const m = d ? /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(d) : null;
+  if (!m) return null;
+  return Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
+}
+
+/**
+ * Latest ~15 uploads of a channel (or a playlist) from YouTube's public RSS feed. Free: no API key
+ * and no quota, so routine "anything new?" scans cost nothing.
+ */
+export async function rssVideos(
+  ref: { channelId: string } | { playlistId: string },
+  fetchImpl: typeof fetch = fetch.bind(globalThis),
+): Promise<YtVideo[]> {
+  const q = "channelId" in ref ? `channel_id=${ref.channelId}` : `playlist_id=${ref.playlistId}`;
+  const res = await fetchImpl(`https://www.youtube.com/feeds/videos.xml?${q}`);
+  if (!res.ok) throw new Error(`YouTube RSS ${res.status}`);
+  return parseRss(await res.text());
+}
+
+const decode = (s: string) =>
+  s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+
+export function parseRss(xml: string): YtVideo[] {
+  const channelTitle = decode(/<author>\s*<name>([^<]*)<\/name>/.exec(xml)?.[1] ?? "");
+  const out: YtVideo[] = [];
+  for (const entry of xml.split("<entry>").slice(1)) {
+    const id = /<yt:videoId>([\w-]{11})<\/yt:videoId>/.exec(entry)?.[1];
+    const title = /<title>([^<]*)<\/title>/.exec(entry)?.[1];
+    const published = /<published>([^<]+)<\/published>/.exec(entry)?.[1];
+    const channelId = /<yt:channelId>([^<]+)<\/yt:channelId>/.exec(entry)?.[1];
+    if (id && title && published) {
+      out.push({
+        videoId: id,
+        title: decode(title),
+        publishedAt: published,
+        channelId: channelId ?? "",
+        channelTitle,
+      });
+    }
+  }
+  return out;
 }

@@ -1,3 +1,4 @@
+export * from "./align";
 export * from "./parse";
 export * from "./plan";
 export * from "./resolve";

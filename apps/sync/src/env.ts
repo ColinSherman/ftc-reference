@@ -24,4 +24,5 @@ export type SyncMessage =
   | { job: "leagueMembers"; season: number; region: string; code: string }
   | { job: "avatars"; cmpYear: number }
   | { job: "videoScan" }
+  | { job: "streamAlign" }
   | { job: "avatarFetch"; cmpYear: number; refs: { team: number; key: string; path: string }[] };
