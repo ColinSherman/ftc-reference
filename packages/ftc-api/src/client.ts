@@ -23,9 +23,32 @@ export interface FtcApiOptions {
   baseUrl?: string;
   /** Minimum gap between requests from this client (politeness for bulk backfills). */
   minIntervalMs?: number;
+  /** Share one rate limit across several clients (e.g. jobs running concurrently in a queue batch). */
+  throttle?: Throttle;
   /** Max attempts for 429 / 5xx / network errors. */
   attempts?: number;
   baseDelayMs?: number;
+}
+
+/** Serialises request starts so all callers sharing it respect a minimum interval. */
+export class Throttle {
+  private last = 0;
+  private gate: Promise<void> = Promise.resolve();
+  constructor(readonly minIntervalMs: number) {}
+
+  async wait() {
+    if (!this.minIntervalMs) return;
+    const prev = this.gate;
+    let release = () => {};
+    this.gate = new Promise((r) => {
+      release = r;
+    });
+    await prev;
+    const wait = this.last + this.minIntervalMs - Date.now();
+    if (wait > 0) await sleep(wait);
+    this.last = Date.now();
+    release();
+  }
 }
 
 export class FtcApi {
@@ -34,9 +57,7 @@ export class FtcApi {
   private readonly attempts: number;
   private readonly baseDelayMs: number;
   private readonly baseUrl: string;
-  private readonly minIntervalMs: number;
-  private lastRequestAt = 0;
-  private gate: Promise<void> = Promise.resolve();
+  private readonly limiter: Throttle;
   /** Requests issued (including retries) — surfaced in sync_runs. */
   requests = 0;
   notModified = 0;
@@ -47,22 +68,11 @@ export class FtcApi {
     this.attempts = opts.attempts ?? 3;
     this.baseDelayMs = opts.baseDelayMs ?? 500;
     this.baseUrl = opts.baseUrl ?? FTC_API_BASE;
-    this.minIntervalMs = opts.minIntervalMs ?? 0;
+    this.limiter = opts.throttle ?? new Throttle(opts.minIntervalMs ?? 0);
   }
 
-  /** Serialises request starts so concurrent callers still respect minIntervalMs. */
-  private async throttle() {
-    if (!this.minIntervalMs) return;
-    const prev = this.gate;
-    let release = () => {};
-    this.gate = new Promise((r) => {
-      release = r;
-    });
-    await prev;
-    const wait = this.lastRequestAt + this.minIntervalMs - Date.now();
-    if (wait > 0) await sleep(wait);
-    this.lastRequestAt = Date.now();
-    release();
+  private throttle() {
+    return this.limiter.wait();
   }
 
   /**

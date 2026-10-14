@@ -1,5 +1,5 @@
 import { nowIso } from "@ftcref/db";
-import { FtcApi } from "@ftcref/ftc-api";
+import { FtcApi, Throttle } from "@ftcref/ftc-api";
 import { CURRENT_SEASON, isSeason } from "@ftcref/seasons";
 import { advanceBackfill } from "./backfill";
 import type { Env, SyncMessage } from "./env";
@@ -15,8 +15,11 @@ const season = CURRENT_SEASON;
 /** The v3 API and avatar files number seasons by Championship year (BIOBUZZ 2026-27 → 2027). */
 const cmpYear = season + 1;
 const BACKFILL_QUEUE_NAME = "ftcref-backfill";
-/** Backfill politeness: ≤ 4 requests/s per consumer (2 consumers max). Live polling is unthrottled. */
-const BACKFILL_INTERVAL_MS = 250;
+/**
+ * Backfill politeness: each consumer invocation shares one throttle across its concurrently-running
+ * jobs, so ≤ 5 requests/s per consumer and ≤ 10/s overall (max_concurrency 2). Live polling is unthrottled.
+ */
+const BACKFILL_INTERVAL_MS = 200;
 
 /** Queues caps sendBatch at 100 messages and 256 KB; split on whichever comes first. */
 async function send(queue: Queue<SyncMessage>, msgs: SyncMessage[]) {
@@ -49,12 +52,12 @@ function targetOf(msg: SyncMessage, bulk: boolean) {
 }
 
 /** Run one job. `again` re-enqueues fan-out work on the same queue the job came from. */
-async function runJob(env: Env, msg: SyncMessage, bulk: boolean) {
+async function runJob(env: Env, msg: SyncMessage, bulk: boolean, throttle?: Throttle) {
   const api = new FtcApi({
     user: env.FTC_API_USER,
     token: env.FTC_API_TOKEN,
     baseUrl: env.FTC_API_BASE,
-    minIntervalMs: bulk ? BACKFILL_INTERVAL_MS : 0,
+    throttle,
   });
   const again = (m: SyncMessage[]) => (bulk ? enqueueBulk(env, m) : enqueue(env, m));
   const started = Date.now();
@@ -162,14 +165,22 @@ export default {
 
   async queue(batch, env) {
     const bulk = batch.queue === BACKFILL_QUEUE_NAME;
-    for (const m of batch.messages) {
+    const handle = async (m: Message<SyncMessage>, throttle?: Throttle) => {
       try {
-        await runJob(env, m.body, bulk);
+        await runJob(env, m.body, bulk, throttle);
         m.ack();
       } catch (e) {
         console.error("job failed", JSON.stringify(m.body), e);
         m.retry({ delaySeconds: Math.min(300, 15 * 2 ** m.attempts) });
       }
+    };
+    if (bulk) {
+      // Run the batch concurrently: jobs spend most of their time in D1, so the shared throttle
+      // (not serial processing) is what bounds the request rate.
+      const throttle = new Throttle(BACKFILL_INTERVAL_MS);
+      await Promise.all(batch.messages.map((m) => handle(m, throttle)));
+    } else {
+      for (const m of batch.messages) await handle(m);
     }
   },
 

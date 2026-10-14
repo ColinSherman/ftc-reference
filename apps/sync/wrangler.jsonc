@@ -40,9 +40,9 @@
         "dead_letter_queue": "ftcref-sync-dlq"
       },
       {
-        // Historical seasons: two consumers × ≤4 req/s each (throttled in code).
+        // Historical seasons: two consumers × ≤5 req/s each (shared throttle per batch, in code).
         "queue": "ftcref-backfill",
-        "max_batch_size": 4,
+        "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_concurrency": 2,
         "max_retries": 4,
