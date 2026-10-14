@@ -138,3 +138,20 @@ describe("planImport", () => {
     expect(p?.confidence).toBe("none");
   });
 });
+
+describe("resolveEvent with odd event codes", () => {
+  it("does not choke on codes containing regex characters", () => {
+    const odd = [
+      ...EVENTS,
+      {
+        season: 2025,
+        code: "USVTM(KO",
+        name: "Vermont Kickoff",
+        date_start: "2025-09-06",
+        date_end: "2025-09-06",
+      },
+    ];
+    expect(resolveEvent("SoCal FTC Group H 2025 Scrimmage 2", odd)?.event.code).toBe("USCALACALAM2");
+    expect(resolveEvent("Vermont USVTM(KO day", odd)?.event.code).toBe("USVTM(KO");
+  });
+});

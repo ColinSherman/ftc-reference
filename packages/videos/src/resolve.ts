@@ -83,7 +83,9 @@ export function resolveEvent(
   opts: { date?: string; extraText?: string } = {},
 ): Resolved | null {
   const upper = `${text} ${opts.extraText ?? ""}`.toUpperCase();
-  const byCode = events.find((e) => new RegExp(`\\b${e.code}\\b`).test(upper));
+  // Whole-word code match without building a regex (FIRST codes can contain characters like "(").
+  const words = new Set(upper.split(/[\s,;:|/\\]+/).filter(Boolean));
+  const byCode = events.find((e) => e.code.length >= 4 && words.has(e.code));
   if (byCode) return { event: byCode, score: 1, margin: 1 };
 
   const tt = tokens(`${text} ${opts.extraText ?? ""}`);
