@@ -6,6 +6,7 @@ import { eventRoutes } from "./routes/event";
 import { homeRoutes } from "./routes/home";
 import { matchRoutes } from "./routes/match";
 import { teamRoutes } from "./routes/team";
+import { videoRoutes } from "./routes/videos";
 import { Layout } from "./views/layout";
 
 const app = new Hono<{ Bindings: Env }>({ strict: false });
@@ -31,6 +32,7 @@ app.route("/a", avatarRoutes);
 app.route("/teams", teamRoutes);
 app.route("/events", eventRoutes);
 app.route("/events", matchRoutes);
+app.route("/", videoRoutes);
 app.route("/", homeRoutes);
 
 app.notFound((c) =>

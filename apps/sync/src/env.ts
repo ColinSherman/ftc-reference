@@ -9,6 +9,8 @@ export interface Env {
   FTC_API_USER: string;
   FTC_API_TOKEN: string;
   ADMIN_TOKEN: string;
+  /** YouTube Data API key (match video scanning). Optional: scanning is skipped without it. */
+  YOUTUBE_API_KEY?: string;
   /** Optional: point at a mock server in local dev. */
   FTC_API_BASE?: string;
 }
@@ -21,4 +23,5 @@ export type SyncMessage =
   | { job: "leagues"; season: number }
   | { job: "leagueMembers"; season: number; region: string; code: string }
   | { job: "avatars"; cmpYear: number }
+  | { job: "videoScan" }
   | { job: "avatarFetch"; cmpYear: number; refs: { team: number; key: string; path: string }[] };

@@ -88,7 +88,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       d.prepare("SELECT alliance, np, detail FROM match_scores WHERE match_id = ?").bind(m.id),
       d
         .prepare(
-          "SELECT video_id, start_s FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY votes DESC LIMIT 1",
+          "SELECT video_id, start_s, title, channel_title FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY votes DESC, id LIMIT 6",
         )
         .bind(m.id),
     ]);
@@ -104,7 +104,14 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
     };
     const red = parse("R");
     const blue = parse("B");
-    const video = videoR?.results[0] as { video_id: string; start_s: number | null } | undefined;
+    const videos = (videoR?.results ?? []) as {
+      video_id: string;
+      start_s: number | null;
+      title: string | null;
+      channel_title: string | null;
+    }[];
+    const video = videos[0];
+    const addHref = `/videos/submit?match=${season}/${code}/${matchSlug(key.level, key.series, key.n)}`;
     const label = matchLabel(key.level, remote ? 0 : key.series, key.n);
     const href = (x: { level: string; series: number; match_number: number }) =>
       `/events/${season}/${code}/${matchSlug(x.level, x.series, x.match_number)}`;
@@ -253,17 +260,38 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
             )}
           </div>
           <div>
-            <h2>Video</h2>
+            <h2 id="video">Video</h2>
             {video ? (
-              <iframe
-                class="video"
-                src={`https://www.youtube-nocookie.com/embed/${video.video_id}?start=${video.start_s ?? 0}`}
-                loading="lazy"
-                allowfullscreen
-                title="Match video"
-              />
+              <>
+                <iframe
+                  class="video"
+                  src={`https://www.youtube-nocookie.com/embed/${video.video_id}?start=${video.start_s ?? 0}`}
+                  loading="lazy"
+                  allowfullscreen
+                  title={video.title ?? "Match video"}
+                />
+                <p class="note">
+                  {video.channel_title && <>From {video.channel_title} · </>}
+                  {videos.length > 1 &&
+                    videos.slice(1).map((v, i) => (
+                      <>
+                        <a
+                          href={`https://www.youtube.com/watch?v=${v.video_id}${v.start_s ? `&t=${v.start_s}` : ""}`}
+                          rel="noopener"
+                        >
+                          Angle {i + 2}
+                        </a>{" "}
+                        ·{" "}
+                      </>
+                    ))}
+                  <a href={addHref}>Add another video</a>
+                </p>
+              </>
             ) : (
-              <div class="video none">No match video yet — submissions coming soon.</div>
+              <div class="video none">
+                No match video yet. <a href={addHref}>Add one</a> — or{" "}
+                <a href="/videos/submit">import a whole playlist</a>.
+              </div>
             )}
           </div>
         </div>

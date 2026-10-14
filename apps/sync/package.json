@@ -11,6 +11,7 @@
     "@ftcref/db": "workspace:*",
     "@ftcref/ftc-api": "workspace:*",
     "@ftcref/seasons": "workspace:*",
-    "@ftcref/stats": "workspace:*"
+    "@ftcref/stats": "workspace:*",
+    "@ftcref/videos": "workspace:*"
   }
 }

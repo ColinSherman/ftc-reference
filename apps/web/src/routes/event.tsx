@@ -389,6 +389,7 @@ interface MatchRow {
   blue_np: number | null;
   winner: string | null;
   played: number;
+  has_video: number;
   teams: string | null; // "Red1:123,Red2:456,…"
 }
 
@@ -416,6 +417,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         .prepare(
           `SELECT m.id, m.level, m.series, m.match_number, m.red_score, m.blue_score, m.red_np, m.blue_np,
                   m.winner, m.played,
+                  EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video,
                   (SELECT group_concat(station || ':' || team) FROM match_teams mt WHERE mt.match_id = m.id) AS teams
            FROM matches m WHERE m.season = ? AND m.event_code = ?
            ORDER BY CASE m.level WHEN 'Q' THEN 0 ELSE 1 END, m.series, m.match_number`,
@@ -825,7 +827,18 @@ function MatchTable(props: { season: number; code: string; matches: MatchRow[] }
                 href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
               >
                 {matchLabel(m.level, m.series, m.match_number)}
-              </a>
+              </a>{" "}
+              {m.has_video ? (
+                <a
+                  class="vid"
+                  href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}#video`}
+                  title="Watch"
+                >
+                  ▶
+                </a>
+              ) : (
+                ""
+              )}
             </td>
             <td class="l r">{links(side(m.teams ?? "", "Red"))}</td>
             <td class="l b">{links(side(m.teams ?? "", "Blue"))}</td>
@@ -881,7 +894,18 @@ function RemoteMatchTable(props: {
                 href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
               >
                 {matchLabel(m.level, 0, m.match_number)}
-              </a>
+              </a>{" "}
+              {m.has_video ? (
+                <a
+                  class="vid"
+                  href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}#video`}
+                  title="Watch"
+                >
+                  ▶
+                </a>
+              ) : (
+                ""
+              )}
             </td>
             <td>{m.played ? m.red_score : ""}</td>
             <td class="ht" style={heat(m.red_np)}>

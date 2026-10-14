@@ -9,6 +9,7 @@ import { syncEventMatches } from "./jobs/eventMatches";
 import { syncEvents } from "./jobs/events";
 import { syncLeagueMembers, syncLeagues } from "./jobs/leagues";
 import { syncTeamsPage } from "./jobs/teams";
+import { scanVideoChannels } from "./jobs/videos";
 import { planLive, recentEvents } from "./planner";
 
 const season = CURRENT_SEASON;
@@ -99,6 +100,11 @@ async function runJob(env: Env, msg: SyncMessage, bulk: boolean, throttle?: Thro
       case "avatarFetch":
         rows = await fetchAvatarBatch(env, msg.cmpYear, msg.refs);
         break;
+      case "videoScan": {
+        const r = await scanVideoChannels(env);
+        rows = r.approved + r.pending;
+        break;
+      }
     }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
@@ -141,6 +147,7 @@ export default {
           { job: "events", season },
           { job: "leagues", season },
           { job: "avatars", cmpYear },
+          { job: "videoScan" },
         ]);
         break;
       case "30 9 * * *": {

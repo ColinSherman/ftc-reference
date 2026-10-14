@@ -22,6 +22,7 @@ interface LogRow {
   blue_np: number | null;
   winner: string | null;
   played: number;
+  has_video: number;
   teams: string | null;
 }
 
@@ -111,6 +112,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         .prepare(
           `SELECT m.event_code, e.name AS event_name, e.remote, m.level, m.series, m.match_number, mt.alliance,
                   m.red_score, m.blue_score, m.red_np, m.blue_np, m.winner, m.played,
+                  EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video,
                   (SELECT group_concat(x.station || ':' || x.team) FROM match_teams x WHERE x.match_id = m.id) AS teams
            FROM match_teams mt
            JOIN matches m ON m.id = mt.match_id
@@ -420,6 +422,17 @@ function MatchLog(props: { team: number; season: number; rows: LogRow[] }) {
                 >
                   {matchLabel(m.level, remote ? 0 : m.series, m.match_number)}
                 </a>{" "}
+                {m.has_video ? (
+                  <a
+                    class="vid"
+                    href={`/events/${props.season}/${m.event_code}/${matchSlug(m.level, m.series, m.match_number)}#video`}
+                    title="Watch"
+                  >
+                    ▶
+                  </a>
+                ) : (
+                  ""
+                )}{" "}
                 {!remote && <span style={`color:var(--${mine === "R" ? "red" : "blue"})`}>●</span>}
               </td>
               {!remote && (

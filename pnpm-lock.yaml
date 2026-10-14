@@ -38,12 +38,18 @@ importers:
       '@ftcref/stats':
         specifier: workspace:*
         version: link:../../packages/stats
+      '@ftcref/videos':
+        specifier: workspace:*
+        version: link:../../packages/videos
 
   apps/web:
     dependencies:
       '@ftcref/seasons':
         specifier: workspace:*
         version: link:../../packages/seasons
+      '@ftcref/videos':
+        specifier: workspace:*
+        version: link:../../packages/videos
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -59,6 +65,8 @@ importers:
         version: link:../ftc-api
 
   packages/stats: {}
+
+  packages/videos: {}
 
 packages:
 
