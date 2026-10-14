@@ -49,6 +49,39 @@ export function TeamName(props: {
   );
 }
 
+/** Fixed-width first-column cell holding the ▶ link (or nothing) so video buttons line up vertically. */
+export function VidCell(props: { href: string; has: boolean | number }) {
+  return (
+    <td class="vc">
+      {props.has ? (
+        <a class="vid" href={`${props.href}#video`} title="Watch">
+          ▶
+        </a>
+      ) : (
+        ""
+      )}
+    </td>
+  );
+}
+
+/** Compact "[avatar]number" links for a list of teams (match tables). */
+export function TeamLinks(props: {
+  teams: { team: number; av?: string | null }[];
+  season: number;
+  hi?: Set<number>;
+}) {
+  return (
+    <>
+      {props.teams.map((t) => (
+        <a class="tl" href={`/teams/${t.team}?season=${props.season}`}>
+          <Av team={t.team} k={t.av} />
+          {t.team}
+        </a>
+      ))}
+    </>
+  );
+}
+
 export const STAT_TIPS: Record<string, string> = {
   Rk: "Official event rank",
   "W-L-T": "Wins-losses-ties (qualification matches)",
