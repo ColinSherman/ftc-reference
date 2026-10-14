@@ -11,6 +11,7 @@ import {
   YouTube,
 } from "@ftcref/videos";
 import type { Env } from "../env";
+import { alignBroadcasterStreams } from "./broadcasters";
 
 const DAY = 86_400_000;
 const RETRY_LIVE_MS = 6 * 3_600_000;
@@ -36,9 +37,11 @@ export async function alignEventStreams(env: Env, limit = 200) {
   const usage = { rss: 0 };
   try {
     const r = await alignInner(env, yt, usage, limit);
+    // Then channels that stream whole events without FIRST linking them (matched by time + title).
+    const b = await alignBroadcasterStreams(env, yt, usage);
     await recordApiUsage(env.DB, "youtube", yt.calls);
     await recordApiUsage(env.DB, "youtube_rss", usage.rss);
-    return r;
+    return { ...r, matches: r.matches + b.matches, broadcasterStreams: b.streams };
   } catch (e) {
     await recordApiUsage(env.DB, "youtube", yt.calls, e);
     throw e;

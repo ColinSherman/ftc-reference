@@ -384,6 +384,8 @@ videoRoutes.get("/admin/videos", async (c) => {
     title: string | null;
     trusted: number;
     auto_scan: number;
+    broadcaster: number;
+    region_code: string | null;
     last_scanned_at: string | null;
   }[];
   return c.html(
@@ -490,6 +492,7 @@ videoRoutes.get("/admin/videos", async (c) => {
             <th class="l">Channel</th>
             <th>Trusted</th>
             <th>Auto-scan</th>
+            <th title="Streams whole events; matched to events by time + title">Broadcaster</th>
             <th class="l">Last scan</th>
             <th class="l"> </th>
           </tr>
@@ -504,6 +507,7 @@ videoRoutes.get("/admin/videos", async (c) => {
               </td>
               <td>{ch.trusted ? "✓" : ""}</td>
               <td>{ch.auto_scan ? "✓" : ""}</td>
+              <td>{ch.broadcaster ? `✓ ${ch.region_code ?? "any region"}` : ""}</td>
               <td class="l note">{ch.last_scanned_at?.slice(0, 16).replace("T", " ") ?? "never"}</td>
               <td class="l">
                 <form method="post" action="/admin/channels" style="display:flex;gap:4px">
@@ -513,6 +517,9 @@ videoRoutes.get("/admin/videos", async (c) => {
                   </button>
                   <button type="submit" name="action" value="toggle-scan" class="go">
                     {ch.auto_scan ? "Stop scanning" : "Auto-scan"}
+                  </button>
+                  <button type="submit" name="action" value="toggle-broadcaster" class="go">
+                    {ch.broadcaster ? "Not broadcaster" : "Broadcaster"}
                   </button>
                   <button type="submit" name="action" value="scan-now" class="go">
                     Scan now
@@ -538,6 +545,15 @@ videoRoutes.get("/admin/videos", async (c) => {
           <span>
             <input type="checkbox" name="auto_scan" value="1" checked /> Auto-scan
           </span>
+        </label>
+        <label class="chk">
+          <span>
+            <input type="checkbox" name="broadcaster" value="1" /> Broadcaster
+          </span>
+        </label>
+        <label>
+          Region (e.g. USCANO)
+          <input name="region" maxlength={10} style="width:90px" />
         </label>
         <button type="submit" class="go">
           Add
@@ -587,8 +603,9 @@ videoRoutes.post("/admin/channels", async (c) => {
   const f = await c.req.parseBody();
   const id = String(f.channel_id ?? "");
   const now = new Date().toISOString();
-  if (f.action === "toggle-trusted" || f.action === "toggle-scan") {
-    const col = f.action === "toggle-trusted" ? "trusted" : "auto_scan";
+  if (f.action === "toggle-trusted" || f.action === "toggle-scan" || f.action === "toggle-broadcaster") {
+    const col =
+      f.action === "toggle-trusted" ? "trusted" : f.action === "toggle-scan" ? "auto_scan" : "broadcaster";
     await c.env.DB.prepare(`UPDATE video_channels SET ${col} = 1 - ${col} WHERE channel_id = ?`)
       .bind(id)
       .run();
@@ -663,10 +680,22 @@ videoRoutes.post("/admin/channels", async (c) => {
     }
     if (chId) {
       await c.env.DB.prepare(
-        `INSERT INTO video_channels (channel_id, title, trusted, auto_scan, added_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (channel_id) DO UPDATE SET title = excluded.title, trusted = excluded.trusted, auto_scan = excluded.auto_scan`,
+        `INSERT INTO video_channels (channel_id, title, trusted, auto_scan, broadcaster, region_code, added_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (channel_id) DO UPDATE SET title = excluded.title, trusted = excluded.trusted,
+           auto_scan = excluded.auto_scan, broadcaster = excluded.broadcaster, region_code = excluded.region_code`,
       )
-        .bind(chId, title, f.trusted ? 1 : 0, f.auto_scan ? 1 : 0, now)
+        .bind(
+          chId,
+          title,
+          f.trusted ? 1 : 0,
+          f.auto_scan ? 1 : 0,
+          f.broadcaster ? 1 : 0,
+          String(f.region ?? "")
+            .trim()
+            .toUpperCase() || null,
+          now,
+        )
         .run();
     }
   }
