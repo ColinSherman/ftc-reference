@@ -4,7 +4,7 @@ import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { regionName } from "../regions";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
-import { Av, CompTh, Result, StatBox, Th } from "../views/ui";
+import { Av, CompTh, Result, StatBox, TeamLinks, Th, VidCell } from "../views/ui";
 
 export const teamRoutes = new Hono<{ Bindings: Env }>();
 
@@ -113,7 +113,8 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
           `SELECT m.event_code, e.name AS event_name, e.remote, m.level, m.series, m.match_number, mt.alliance,
                   m.red_score, m.blue_score, m.red_np, m.blue_np, m.winner, m.played,
                   EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video,
-                  (SELECT group_concat(x.station || ':' || x.team) FROM match_teams x WHERE x.match_id = m.id) AS teams
+                  (SELECT group_concat(x.station || ':' || x.team || ':' || COALESCE(xa.key, '')) FROM match_teams x
+                   LEFT JOIN team_avatars xa ON xa.team = x.team WHERE x.match_id = m.id) AS teams
            FROM match_teams mt
            JOIN matches m ON m.id = mt.match_id
            JOIN events e ON e.season = m.season AND e.code = m.event_code
@@ -376,6 +377,7 @@ function MatchLog(props: { team: number; season: number; rows: LogRow[] }) {
     <Table>
       <thead>
         <tr>
+          <th class="vc" title="Video" />
           <th class="l">Match</th>
           {!remote && (
             <th class="l" title="Result">
@@ -393,43 +395,26 @@ function MatchLog(props: { team: number; season: number; rows: LogRow[] }) {
         {props.rows.map((m) => {
           const mine = m.alliance;
           const entries = (m.teams ?? "").split(",").map((s) => {
-            const [st, t] = s.split(":");
-            return { ally: (st ?? "").startsWith("Red") ? "R" : "B", team: Number(t) };
+            const [st, t, av] = s.split(":");
+            return { ally: (st ?? "").startsWith("Red") ? "R" : "B", team: Number(t), av: av || null };
           });
           const partners = entries.filter((e) => e.ally === mine && e.team !== props.team);
           const opps = entries.filter((e) => e.ally !== mine);
           const own = mine === "R" ? m.red_score : m.blue_score;
           const opp = mine === "R" ? m.blue_score : m.red_score;
           const res = !m.played || remote ? "" : m.winner === "T" ? "T" : m.winner === mine ? "W" : "L";
-          const links = (xs: { team: number }[]) =>
-            xs.map((x, i) => (
-              <>
-                {i > 0 && " "}
-                <a href={`/teams/${x.team}?season=${props.season}`}>{x.team}</a>
-              </>
-            ));
+          const links = (xs: { team: number; av: string | null }[]) => (
+            <TeamLinks teams={xs} season={props.season} />
+          );
+          const href = `/events/${props.season}/${m.event_code}/${matchSlug(m.level, m.series, m.match_number)}`;
           return (
             <tr>
+              <VidCell href={href} has={m.has_video} />
               <td
                 class="l"
                 data-v={(m.level === "Q" ? 0 : 1000) + (remote ? 0 : m.series * 10) + m.match_number}
               >
-                <a
-                  href={`/events/${props.season}/${m.event_code}/${matchSlug(m.level, m.series, m.match_number)}`}
-                >
-                  {matchLabel(m.level, remote ? 0 : m.series, m.match_number)}
-                </a>{" "}
-                {m.has_video ? (
-                  <a
-                    class="vid"
-                    href={`/events/${props.season}/${m.event_code}/${matchSlug(m.level, m.series, m.match_number)}#video`}
-                    title="Watch"
-                  >
-                    ▶
-                  </a>
-                ) : (
-                  ""
-                )}{" "}
+                <a href={href}>{matchLabel(m.level, remote ? 0 : m.series, m.match_number)}</a>{" "}
                 {!remote && <span style={`color:var(--${mine === "R" ? "red" : "blue"})`}>●</span>}
               </td>
               {!remote && (

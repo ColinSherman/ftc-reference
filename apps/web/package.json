@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8788 --persist-to ../../.wrangler/state",
-    "deploy": "wrangler deploy --minify"
+    "deploy": "wrangler deploy --minify",
+    "deploy:stage": "wrangler deploy --minify --env staging"
   },
   "dependencies": {
     "@ftcref/seasons": "workspace:*",

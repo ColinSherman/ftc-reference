@@ -11,7 +11,8 @@
     "db:migrate:remote": "pnpm --filter @ftcref/sync exec wrangler d1 migrations apply ftcref --remote",
     "dev:sync": "pnpm --filter @ftcref/sync dev",
     "dev:web": "pnpm --filter @ftcref/web dev",
-    "deploy": "pnpm --filter @ftcref/sync deploy && pnpm --filter @ftcref/web deploy"
+    "deploy": "pnpm --filter @ftcref/sync deploy && pnpm --filter @ftcref/web deploy",
+    "deploy:stage": "pnpm --filter @ftcref/web deploy:stage"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

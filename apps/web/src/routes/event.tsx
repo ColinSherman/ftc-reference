@@ -12,8 +12,10 @@ import {
   SeasonSelect,
   StatBox,
   StatusPill,
+  TeamLinks,
   TeamName,
   Th,
+  VidCell,
 } from "../views/ui";
 
 // ----------------------------------------------------------------------------- event types (FTCScout-style)
@@ -430,7 +432,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
   return cached(c, { versions: [`event:${season}:${code}`], ttl: VERSIONED_TTL }, async () => {
     const desc = getSeason(season);
     const d = db(c);
-    const [evR, rankR, matchR, statR, allyR, awardR, teamsR] = await d.batch([
+    const [evR, rankR, matchR, statR, allyR, awardR, teamsR, streamR] = await d.batch([
       d.prepare("SELECT * FROM events WHERE season = ? AND code = ?").bind(season, code),
       d
         .prepare(
@@ -478,7 +480,13 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
            WHERE et.season = ? AND et.event_code = ?`,
         )
         .bind(season, code),
+      d
+        .prepare(
+          "SELECT day, video_id FROM event_streams WHERE season = ? AND event_code = ? AND provider = 'youtube' ORDER BY day",
+        )
+        .bind(season, code),
     ]);
+    const streams = (streamR?.results ?? []) as { day: string; video_id: string }[];
     const ev = evR?.results[0] as EventRow | undefined;
     if (!ev) {
       return c.html(
@@ -612,6 +620,13 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
               <a href={ev.live_stream_url}>Livestream</a>
             </div>
           )}
+          {streams.map((st, i) => (
+            <div>
+              <a href={`https://www.youtube.com/watch?v=${st.video_id}`}>
+                {streams.length > 1 ? `Stream day ${i + 1} (${st.day})` : "Event stream"}
+              </a>
+            </div>
+          ))}
           <div>
             <a href={`https://ftc-events.firstinspires.org/${season}/${code}`}>FIRST event page</a>
           </div>
@@ -649,6 +664,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         <div class="tabs">
           <a href="#rankings">Rankings</a>
           <a href="#matches">Matches</a>
+          {!remote && <a href="#bracket">Bracket</a>}
           <a href="#stats">Team Stats</a>
           {!remote && <a href="#alliances">Alliances</a>}
           <a href="#awards">Awards</a>
@@ -700,9 +716,22 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         {matches.length === 0 ? (
           <p class="note">Schedule not published yet.</p>
         ) : remote ? (
-          <RemoteMatchTable season={season} code={code} matches={matches} roster={roster} />
+          <RemoteMatchTable
+            season={season}
+            code={code}
+            matches={matches}
+            roster={roster}
+            high={high?.np ?? null}
+          />
         ) : (
-          <MatchTable season={season} code={code} matches={matches} />
+          <MatchTable season={season} code={code} matches={matches} roster={roster} high={high?.np ?? null} />
+        )}
+
+        {!remote && (
+          <>
+            <h2 id="bracket">Playoff Bracket</h2>
+            <Bracket season={season} code={code} matches={matches} allys={allys} />
+          </>
         )}
 
         <h2 id="stats">Team Stats</h2>
@@ -815,25 +844,32 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
   });
 });
 
-function MatchTable(props: { season: number; code: string; matches: MatchRow[] }) {
+type Roster = Map<number, { name_short: string | null; av: string | null }>;
+
+function MatchTable(props: {
+  season: number;
+  code: string;
+  matches: MatchRow[];
+  roster: Roster;
+  high: number | null;
+}) {
   const side = (teams: string, ally: "Red" | "Blue") =>
     teams
       .split(",")
       .filter((s) => s.startsWith(ally))
       .sort()
-      .map((s) => Number(s.split(":")[1]));
+      .map((s) => {
+        const team = Number(s.split(":")[1]);
+        return { team, av: props.roster.get(team)?.av };
+      });
   const npHeat = heatScale(props.matches.flatMap((m) => [m.red_np, m.blue_np]));
-  const links = (ts: number[]) =>
-    ts.map((t, i) => (
-      <>
-        {i > 0 && " "}
-        <a href={`/teams/${t}?season=${props.season}`}>{t}</a>
-      </>
-    ));
+  const firstPlayoff = props.matches.findIndex((m) => m.level !== "Q");
+  const hi = (np: number | null) => (props.high != null && np === props.high ? " top" : "");
   return (
     <Table>
       <thead>
         <tr>
+          <th class="vc" title="Video" />
           <th class="l">Match</th>
           <th class="l">Red</th>
           <th class="l">Blue</th>
@@ -844,40 +880,135 @@ function MatchTable(props: { season: number; code: string; matches: MatchRow[] }
         </tr>
       </thead>
       <tbody>
-        {props.matches.map((m) => (
-          <tr>
-            <td class="l" data-v={(m.level === "Q" ? 0 : 1000) + m.series * 10 + m.match_number}>
-              <a
-                href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
-              >
-                {matchLabel(m.level, m.series, m.match_number)}
-              </a>{" "}
-              {m.has_video ? (
-                <a
-                  class="vid"
-                  href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}#video`}
-                  title="Watch"
-                >
-                  ▶
-                </a>
-              ) : (
-                ""
-              )}
-            </td>
-            <td class="l r">{links(side(m.teams ?? "", "Red"))}</td>
-            <td class="l b">{links(side(m.teams ?? "", "Blue"))}</td>
-            <td class={`r${m.winner === "R" ? " w" : ""}`}>{m.played ? m.red_score : ""}</td>
-            <td class={`b${m.winner === "B" ? " w" : ""}`}>{m.played ? m.blue_score : ""}</td>
-            <td class="ht" style={npHeat(m.red_np)}>
-              {m.red_np ?? ""}
-            </td>
-            <td class="ht" style={npHeat(m.blue_np)}>
-              {m.blue_np ?? ""}
-            </td>
-          </tr>
-        ))}
+        {props.matches.map((m, i) => {
+          const href = `/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`;
+          return (
+            <tr class={i > 0 && i === firstPlayoff ? "sep" : undefined}>
+              <VidCell href={href} has={m.has_video} />
+              <td class="l" data-v={(m.level === "Q" ? 0 : 1000) + m.series * 10 + m.match_number}>
+                <a href={href}>{matchLabel(m.level, m.series, m.match_number)}</a>
+              </td>
+              <td class="l r">
+                <TeamLinks teams={side(m.teams ?? "", "Red")} season={props.season} />
+              </td>
+              <td class="l b">
+                <TeamLinks teams={side(m.teams ?? "", "Blue")} season={props.season} />
+              </td>
+              <td class={`r${m.winner === "R" ? " w" : ""}${hi(m.red_np)}`}>{m.played ? m.red_score : ""}</td>
+              <td class={`b${m.winner === "B" ? " w" : ""}${hi(m.blue_np)}`}>
+                {m.played ? m.blue_score : ""}
+              </td>
+              <td class="ht" style={npHeat(m.red_np)}>
+                {m.red_np ?? ""}
+              </td>
+              <td class="ht" style={npHeat(m.blue_np)}>
+                {m.blue_np ?? ""}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </Table>
+  );
+}
+
+/**
+ * Double-elimination bracket derived from the played data (no hard-coded bracket shape): each
+ * playoff match is placed by which alliances play it. A match is "lower bracket" once either
+ * alliance already has a loss; its column is how many matches the busier alliance has played.
+ */
+function Bracket(props: {
+  season: number;
+  code: string;
+  matches: MatchRow[];
+  allys: {
+    number: number;
+    captain: number | null;
+    pick1: number | null;
+    pick2: number | null;
+    backup: number | null;
+  }[];
+}) {
+  const playoffs = props.matches.filter((m) => m.level !== "Q");
+  if (playoffs.length === 0) return <p class="note">Playoffs have not been scheduled yet.</p>;
+  const allyOf = new Map<number, number>();
+  for (const a of props.allys)
+    for (const t of [a.captain, a.pick1, a.pick2, a.backup]) if (t) allyOf.set(t, a.number);
+  const sideAlly = (teams: string | null, prefix: string) => {
+    for (const s of (teams ?? "").split(",")) {
+      if (s.startsWith(prefix)) {
+        const a = allyOf.get(Number(s.split(":")[1]));
+        if (a) return a;
+      }
+    }
+    return null;
+  };
+  const losses = new Map<number, number>();
+  const stage = new Map<number, number>();
+  type Node = {
+    m: MatchRow;
+    red: number | null;
+    blue: number | null;
+    sec: "Upper" | "Lower" | "Final";
+    col: number;
+  };
+  const nodes: Node[] = [];
+  for (const m of playoffs) {
+    const red = sideAlly(m.teams, "Red");
+    const blue = sideAlly(m.teams, "Blue");
+    const lower =
+      (red != null && (losses.get(red) ?? 0) > 0) || (blue != null && (losses.get(blue) ?? 0) > 0);
+    const col = Math.max(red != null ? (stage.get(red) ?? 0) : 0, blue != null ? (stage.get(blue) ?? 0) : 0);
+    nodes.push({ m, red, blue, sec: m.level === "F" ? "Final" : lower ? "Lower" : "Upper", col });
+    for (const a of [red, blue]) if (a != null) stage.set(a, col + 1);
+    if (m.played && m.winner && m.winner !== "T") {
+      const loser = m.winner === "R" ? blue : red;
+      if (loser != null) losses.set(loser, (losses.get(loser) ?? 0) + 1);
+    }
+  }
+  const section = (sec: Node["sec"]) => {
+    const ns = nodes.filter((n) => n.sec === sec);
+    const cols = [...new Set(ns.map((n) => n.col))].sort((a, b) => a - b);
+    return (
+      <>
+        <h3 style="font-size:13px;margin:8px 0 2px">{sec === "Final" ? "Finals" : `${sec} bracket`}</h3>
+        <div class="bk">
+          {cols.map((c, ci) => (
+            <div class="col">
+              <h4>Round {ci + 1}</h4>
+              {ns
+                .filter((n) => n.col === c)
+                .map((n) => {
+                  const href = `/events/${props.season}/${props.code}/${matchSlug(n.m.level, n.m.series, n.m.match_number)}`;
+                  const row = (ally: number | null, cls: "r" | "b", score: number | null, won: boolean) => (
+                    <div class={`a ${cls}${won ? " w" : ""}`}>
+                      <span>{ally ? `Alliance ${ally}` : "TBD"}</span>
+                      <span>{n.m.played ? score : ""}</span>
+                    </div>
+                  );
+                  return (
+                    <a class="bm" href={href} style="display:block;color:inherit">
+                      <div class="h">
+                        <span>{matchLabel(n.m.level, n.m.series, n.m.match_number)}</span>
+                        {n.m.has_video ? <span>▶</span> : null}
+                      </div>
+                      {row(n.red, "r", n.m.red_score, n.m.winner === "R")}
+                      {row(n.blue, "b", n.m.blue_score, n.m.winner === "B")}
+                    </a>
+                  );
+                })}
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  };
+  return (
+    <>
+      {section("Upper")}
+      {nodes.some((n) => n.sec === "Lower") && section("Lower")}
+      {nodes.some((n) => n.sec === "Final") && section("Final")}
+    </>
   );
 }
 
@@ -886,57 +1017,50 @@ function RemoteMatchTable(props: {
   season: number;
   code: string;
   matches: MatchRow[];
-  roster: Map<number, { name_short: string | null; av: string | null }>;
+  roster: Roster;
+  high: number | null;
 }) {
   const heat = heatScale(props.matches.map((m) => m.red_np));
   return (
     <Table>
       <thead>
         <tr>
+          <th class="vc" title="Video" />
+          <th class="l">Match</th>
           <th>Team</th>
           <th class="l">Name</th>
-          <th class="l">Match</th>
           <th>Score</th>
           <th title="Score before penalty deductions">NP</th>
         </tr>
       </thead>
       <tbody>
-        {props.matches.map((m) => (
-          <tr>
-            <td>
-              <a href={`/teams/${m.series}?season=${props.season}`}>{m.series}</a>
-            </td>
-            <td class="l">
-              <TeamName
-                team={m.series}
-                name={props.roster.get(m.series)?.name_short}
-                av={props.roster.get(m.series)?.av}
-              />
-            </td>
-            <td class="l" data-v={m.match_number}>
-              <a
-                href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`}
-              >
-                {matchLabel(m.level, 0, m.match_number)}
-              </a>{" "}
-              {m.has_video ? (
-                <a
-                  class="vid"
-                  href={`/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}#video`}
-                  title="Watch"
-                >
-                  ▶
-                </a>
-              ) : (
-                ""
-              )}
-            </td>
-            <td>{m.played ? m.red_score : ""}</td>
-            <td class="ht" style={heat(m.red_np)}>
-              {m.red_np ?? ""}
-            </td>
-          </tr>
-        ))}
+        {props.matches.map((m) => {
+          const href = `/events/${props.season}/${props.code}/${matchSlug(m.level, m.series, m.match_number)}`;
+          return (
+            <tr>
+              <VidCell href={href} has={m.has_video} />
+              <td class="l" data-v={m.match_number}>
+                <a href={href}>{matchLabel(m.level, 0, m.match_number)}</a>
+              </td>
+              <td>
+                <a href={`/teams/${m.series}?season=${props.season}`}>{m.series}</a>
+              </td>
+              <td class="l">
+                <TeamName
+                  team={m.series}
+                  name={props.roster.get(m.series)?.name_short}
+                  av={props.roster.get(m.series)?.av}
+                />
+              </td>
+              <td class={props.high != null && m.red_np === props.high ? "top" : undefined}>
+                {m.played ? m.red_score : ""}
+              </td>
+              <td class="ht" style={heat(m.red_np)}>
+                {m.red_np ?? ""}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </Table>
   );

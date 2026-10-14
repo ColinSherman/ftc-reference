@@ -3,7 +3,17 @@ import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
-import { Box, eventStatus, heatScale, SeasonSelect, StatusPill, TeamName, Th } from "../views/ui";
+import {
+  Box,
+  eventStatus,
+  heatScale,
+  SeasonSelect,
+  StatusPill,
+  TeamLinks,
+  TeamName,
+  Th,
+  VidCell,
+} from "../views/ui";
 
 export const homeRoutes = new Hono<{ Bindings: Env }>();
 
@@ -47,7 +57,10 @@ homeRoutes.get("/", (c) =>
       d
         .prepare(
           `SELECT m.event_code, m.level, m.series, m.match_number, s.alliance, s.np,
-                  (SELECT group_concat(team, ' ') FROM match_teams x WHERE x.match_id = m.id AND x.alliance = s.alliance) AS teams
+                  (SELECT group_concat(x.team || ':' || COALESCE(xa.key, ''), ' ') FROM match_teams x
+                   LEFT JOIN team_avatars xa ON xa.team = x.team
+                   WHERE x.match_id = m.id AND x.alliance = s.alliance) AS teams,
+                  EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video
            FROM match_scores s JOIN matches m ON m.id = s.match_id
            WHERE s.season = ? ORDER BY s.np DESC LIMIT 10`,
         )
@@ -99,6 +112,7 @@ homeRoutes.get("/", (c) =>
       alliance: string;
       np: number;
       teams: string | null;
+      has_video: number;
     }[];
     const inspire = (inspireR?.results ?? []) as {
       team: number;
@@ -185,32 +199,34 @@ homeRoutes.get("/", (c) =>
             <Table>
               <thead>
                 <tr>
+                  <th class="vc" title="Video" />
                   <th title="No-penalty alliance score">NP</th>
                   <th class="l">Alliance</th>
                   <th class="l">Match</th>
                 </tr>
               </thead>
               <tbody>
-                {high.map((h) => (
-                  <tr>
-                    <td class="w">{h.np}</td>
-                    <td class={`l ${h.alliance === "R" ? "r" : "b"}`}>
-                      {(h.teams ?? "").split(" ").map((t, i) => (
-                        <>
-                          {i > 0 && " "}
-                          <a href={`/teams/${t}`}>{t}</a>
-                        </>
-                      ))}
-                    </td>
-                    <td class="l">
-                      <a
-                        href={`/events/${SEASON}/${h.event_code}/${matchSlug(h.level, h.series, h.match_number)}`}
-                      >
-                        {h.event_code} {matchLabel(h.level, h.series, h.match_number)}
-                      </a>
-                    </td>
-                  </tr>
-                ))}
+                {high.map((h) => {
+                  const href = `/events/${SEASON}/${h.event_code}/${matchSlug(h.level, h.series, h.match_number)}`;
+                  const teams = (h.teams ?? "").split(" ").map((x) => {
+                    const [team, av] = x.split(":");
+                    return { team: Number(team), av: av || null };
+                  });
+                  return (
+                    <tr>
+                      <VidCell href={href} has={h.has_video} />
+                      <td class="w">{h.np}</td>
+                      <td class={`l ${h.alliance === "R" ? "r" : "b"}`}>
+                        <TeamLinks teams={teams} season={SEASON} />
+                      </td>
+                      <td class="l">
+                        <a href={href}>
+                          {h.event_code} {matchLabel(h.level, h.series, h.match_number)}
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </Table>
           </Box>
