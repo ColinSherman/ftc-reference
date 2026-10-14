@@ -31,6 +31,9 @@ type TradScore = {
 type RemoteScore = { matchLevel: TournamentLevel; matchNumber: number; teamNumber: number; scores: ApiScore };
 type AnyScore = TradScore | RemoteScore;
 
+/** Secondary endpoints: an API error there must not lose the event's schedule. */
+const SOFT = { soft: true };
+
 const matchKey = (level: string, series: number, num: number) => `${level}|${series}|${num}`;
 
 /**
@@ -62,6 +65,7 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
         season,
         `schedule/${code}/playoff/hybrid`,
         force,
+        SOFT,
       );
   if (!changed(qualH) && (!playH || !changed(playH))) {
     await env.DB.batch([qualH.commit(), ...(playH ? [playH.commit()] : [])]);
@@ -69,13 +73,15 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
   }
 
   const [qualS, playS, ranks, teams, allys] = await Promise.all([
-    trackedGet<{ matchScores: AnyScore[] }>(env, api, season, `scores/${code}/qual`, force),
+    trackedGet<{ matchScores: AnyScore[] }>(env, api, season, `scores/${code}/qual`, force, SOFT),
     remote
       ? null
-      : trackedGet<{ matchScores: AnyScore[] }>(env, api, season, `scores/${code}/playoff`, force),
-    trackedGet<{ rankings: ApiRanking[] }>(env, api, season, `rankings/${code}`, force),
-    trackedGet<ApiTeamsPage>(env, api, season, `teams?eventCode=${code}`, force),
-    remote ? null : trackedGet<{ alliances: ApiAlliance[] }>(env, api, season, `alliances/${code}`, force),
+      : trackedGet<{ matchScores: AnyScore[] }>(env, api, season, `scores/${code}/playoff`, force, SOFT),
+    trackedGet<{ rankings: ApiRanking[] }>(env, api, season, `rankings/${code}`, force, SOFT),
+    trackedGet<ApiTeamsPage>(env, api, season, `teams?eventCode=${code}`, force, SOFT),
+    remote
+      ? null
+      : trackedGet<{ alliances: ApiAlliance[] }>(env, api, season, `alliances/${code}`, force, SOFT),
   ]);
   const tracked: Tracked<unknown>[] = [];
   for (const t of [qualH, playH, qualS, playS, ranks, teams, allys])

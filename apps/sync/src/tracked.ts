@@ -1,5 +1,5 @@
 import { nowIso } from "@ftcref/db";
-import type { FetchResult, FtcApi } from "@ftcref/ftc-api";
+import { type FetchResult, type FtcApi, FtcApiError } from "@ftcref/ftc-api";
 import type { Env } from "./env";
 
 export interface Tracked<T> {
@@ -18,6 +18,7 @@ export async function trackedGet<T>(
   season: number,
   path: string,
   force = false,
+  opts: { soft?: boolean } = {},
 ): Promise<Tracked<T>> {
   const key = `${season}/${path}`;
   const state = force
@@ -25,7 +26,23 @@ export async function trackedGet<T>(
     : await env.DB.prepare("SELECT last_modified FROM sync_state WHERE key = ?")
         .bind(key)
         .first<{ last_modified: string | null }>();
-  const result = await api.get<T>(season, path, state?.last_modified);
+  let result: FetchResult<T>;
+  try {
+    result = await api.get<T>(season, path, state?.last_modified);
+  } catch (e) {
+    // Soft endpoints: FIRST occasionally answers 403/404/5xx for one event's scores or rankings
+    // (seen on some 2020–21 remote events). Treat that as "no data" so the rest of the event still syncs.
+    if (!opts.soft || !(e instanceof FtcApiError) || e.httpStatus === 401 || e.httpStatus === 429) throw e;
+    console.warn(`soft-fail ${key}: ${e.httpStatus}`);
+    return {
+      result: { status: "ok", data: null, lastModified: null, body: "" },
+      commit: () =>
+        env.DB.prepare(
+          "INSERT INTO sync_state (key, last_checked_at, fail_count) VALUES (?1, ?2, 1) " +
+            "ON CONFLICT (key) DO UPDATE SET last_checked_at = ?2, fail_count = fail_count + 1",
+        ).bind(key, nowIso()),
+    };
+  }
   const now = nowIso();
 
   if (env.RAW && result.status === "ok" && result.body) await archive(env.RAW, key, result.body, now);
