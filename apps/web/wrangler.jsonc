@@ -22,5 +22,28 @@
   ],
   // Deploy version id is part of the HTML cache key, so each deploy serves fresh markup.
   "version_metadata": { "binding": "CF_VERSION" },
-  "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }]
+  "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }],
+
+  // `wrangler deploy --env staging` -> stage.ftc-reference.com. Separate Worker, same data: it reads the
+  // production D1/KV, so test with real events. Don't use admin/submit forms there unless you mean it.
+  // Secrets are per-Worker: `wrangler secret put ADMIN_TOKEN --env staging` if you need /admin on stage.
+  "env": {
+    "staging": {
+      "name": "ftcref-web-stage",
+      "account_id": "a92ff6c4b72094e5030585f2363b940a",
+      "workers_dev": true,
+      "routes": [{ "pattern": "stage.ftc-reference.com", "custom_domain": true }],
+      "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "ftcref",
+          "database_id": "dae5a37a-cc72-4231-994a-546e0300df1b",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
+      "version_metadata": { "binding": "CF_VERSION" },
+      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }]
+    }
+  }
 }

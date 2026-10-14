@@ -79,6 +79,15 @@ curl "localhost:8787/__scheduled?cron=*+*+*+*+*"     # run the per-minute planne
 6. Run `pnpm deploy`, then start the backfill: `POST /admin/backfill`, followed by `POST /admin/backfill?step=matches`.
 7. Attach a custom domain to `ftcref-web`. `caches.default` doesn't run on `*.workers.dev`, so pages aren't edge-cached until you do.
 
+## Staging (stage.ftc-reference.com)
+
+`pnpm deploy:stage` deploys the web app as a separate Worker (`ftcref-web-stage`) on
+<https://stage.ftc-reference.com>. It reads the production D1/KV so you can test against real events; the
+sync Worker is not duplicated. The `.github/workflows/stage.yml` workflow deploys it automatically on every
+push to a pull request, after tests, typecheck and lint pass. It needs a repo secret
+`CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, D1:Edit, Workers KV:Edit, and Zone/DNS:Edit for ftc-reference.com
+on the personal account). Staging deploys come from whichever PR pushed last.
+
 ## Data terms
 
 Data comes from the FIRST Tech Challenge Events API. Use is non-commercial only, every page links back to the API page (in the footer), and the token must never be committed.
