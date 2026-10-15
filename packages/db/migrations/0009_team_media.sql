@@ -1,5 +1,5 @@
 -- Robot photos for team pages (TBA-style: we store only a pointer to an Imgur image, never the bytes).
--- Visitors submit a link (status 'pending'); an admin approves it. `ref` is the Imgur image id, so
+-- kind is imgur (ref = image id) or instagram (ref = post shortcode, shown via Instagram's embed). Visitors submit a link (status 'pending'); an admin approves it. `ref` is the Imgur image id, so
 -- the image is hotlinked as https://i.imgur.com/{ref}{size}.jpg.
 CREATE TABLE team_media (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

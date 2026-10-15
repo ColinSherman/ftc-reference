@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { flagCode, placeTitle } from "../flags";
-import { imgurUrl } from "../media";
+import { imgurUrl, instagramEmbed, instagramUrl } from "../media";
 import { regionName } from "../regions";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
 import { Av, CompTh, Flag, Result, StatBox, TeamLinks, Th, VidCell } from "../views/ui";
@@ -82,11 +82,17 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         .bind(n),
       d
         .prepare(
-          "SELECT ref, season, caption FROM team_media WHERE team = ? AND status = 'approved' ORDER BY preferred DESC, season DESC, id DESC LIMIT 24",
+          "SELECT kind, ref, season, caption FROM team_media WHERE team = ? AND status = 'approved' ORDER BY preferred DESC, season DESC, id DESC LIMIT 24",
         )
         .bind(n),
     ]);
-    const photos = (mediaR?.results ?? []) as { ref: string; season: number; caption: string | null }[];
+    const photos = (mediaR?.results ?? []) as {
+      kind: string;
+      ref: string;
+      season: number;
+      caption: string | null;
+    }[];
+    const hero = photos.find((p) => p.kind === "imgur");
     const team = teamR?.results[0] as
       | (Record<string, string | number | null> & { av: string | null })
       | undefined;
@@ -167,11 +173,11 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         </div>
         <div class="card">
           <Av team={n} k={team.av} size="xl" />
-          {photos[0] && (
-            <a href={imgurUrl(photos[0].ref)} title="Robot photo">
+          {hero && (
+            <a href={imgurUrl(hero.ref)} title="Robot photo">
               <img
                 class="hero"
-                src={imgurUrl(photos[0].ref, "m")}
+                src={imgurUrl(hero.ref, "m")}
                 width={160}
                 height={120}
                 alt={`Team ${n} robot`}
@@ -328,19 +334,37 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         {photos.length > 0 ? (
           <div class="photos">
             {photos.map((p) => (
-              <figure>
-                <a href={imgurUrl(p.ref)}>
-                  <img
-                    src={imgurUrl(p.ref, "m")}
-                    width={200}
-                    height={150}
+              <figure class={p.kind === "instagram" ? "ig" : undefined}>
+                {p.kind === "instagram" ? (
+                  <iframe
+                    src={instagramEmbed(p.ref)}
+                    title={`Team ${n} robot on Instagram, ${p.season}`}
+                    width={326}
+                    height={440}
                     loading="lazy"
-                    alt={`Team ${n} robot, ${p.season}`}
+                    scrolling="no"
+                    referrerpolicy="strict-origin-when-cross-origin"
                   />
-                </a>
+                ) : (
+                  <a href={imgurUrl(p.ref)}>
+                    <img
+                      src={imgurUrl(p.ref, "m")}
+                      width={200}
+                      height={150}
+                      loading="lazy"
+                      alt={`Team ${n} robot, ${p.season}`}
+                    />
+                  </a>
+                )}
                 <figcaption>
                   {seasonLabel(p.season)}
                   {p.caption ? ` · ${p.caption}` : ""}
+                  {p.kind === "instagram" && (
+                    <>
+                      {" · "}
+                      <a href={instagramUrl(p.ref)}>Instagram</a>
+                    </>
+                  )}
                 </figcaption>
               </figure>
             ))}
@@ -357,8 +381,13 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
             style="flex-direction:column;align-items:stretch"
           >
             <label>
-              Imgur link to one image (upload at imgur.com first; albums won't work)
-              <input name="url" required placeholder="https://imgur.com/AbC123x" style="width:100%" />
+              Imgur image link (not an album) or Instagram post link
+              <input
+                name="url"
+                required
+                placeholder="https://imgur.com/AbC123x or https://instagram.com/p/…"
+                style="width:100%"
+              />
             </label>
             <label>
               Season

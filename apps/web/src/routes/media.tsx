@@ -2,7 +2,7 @@ import { isSeason } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { isAdmin } from "../admin";
 import type { Env } from "../env";
-import { imgurUrl, parseImgur } from "../media";
+import { imgurUrl, instagramUrl, parseMedia } from "../media";
 import { Layout, Table } from "../views/layout";
 import { AdminNav } from "./admin";
 
@@ -26,11 +26,11 @@ mediaRoutes.post("/teams/:n{[0-9]+}/photos", async (c) => {
   const n = Number(c.req.param("n"));
   const back = `/teams/${n}`;
   const f = await c.req.parseBody();
-  const ref = parseImgur(String(f.url ?? ""));
+  const media = parseMedia(String(f.url ?? ""));
   const season = Number(f.season);
-  if (!ref)
+  if (!media)
     return c.html(
-      <Msg title="Use a link to a single Imgur image (not an album)" back={back} />,
+      <Msg title="Use a link to one Imgur image (not an album) or an Instagram post" back={back} />,
       400,
       noStore,
     );
@@ -39,12 +39,13 @@ mediaRoutes.post("/teams/:n{[0-9]+}/photos", async (c) => {
   if (!team) return c.html(<Msg title="Team not found" back="/" />, 404, noStore);
   await c.env.DB.prepare(
     `INSERT INTO team_media (team, season, kind, ref, caption, submitted_by, created_at)
-     VALUES (?, ?, 'imgur', ?, ?, ?, ?) ON CONFLICT (team, kind, ref) DO NOTHING`,
+     VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (team, kind, ref) DO NOTHING`,
   )
     .bind(
       n,
       season,
-      ref,
+      media.kind,
+      media.ref,
       String(f.caption ?? "")
         .trim()
         .slice(0, 120) || null,
@@ -61,7 +62,7 @@ mediaRoutes.get("/admin/photos", async (c) => {
   if (!(await isAdmin(c))) return c.redirect("/admin");
   const status = c.req.query("status") ?? "pending";
   const { results } = await c.env.DB.prepare(
-    `SELECT m.id, m.team, m.season, m.ref, m.caption, m.submitted_by, m.preferred, t.name_short
+    `SELECT m.id, m.team, m.season, m.kind, m.ref, m.caption, m.submitted_by, m.preferred, t.name_short
      FROM team_media m LEFT JOIN teams t ON t.number = m.team
      WHERE m.status = ? ORDER BY m.created_at DESC LIMIT 200`,
   )
@@ -70,6 +71,7 @@ mediaRoutes.get("/admin/photos", async (c) => {
       id: number;
       team: number;
       season: number;
+      kind: string;
       ref: string;
       caption: string | null;
       submitted_by: string | null;
@@ -88,7 +90,7 @@ mediaRoutes.get("/admin/photos", async (c) => {
       <form method="post" action="/admin/photos" class="filters">
         <input name="team" type="number" placeholder="Team #" required style="width:90px" />
         <input name="season" type="number" placeholder="Season" required style="width:90px" />
-        <input name="url" placeholder="Imgur link" required />
+        <input name="url" placeholder="Imgur or Instagram link" required />
         <input name="caption" placeholder="Caption (optional)" />
         <button type="submit" class="go">
           Add (approved)
@@ -108,9 +110,13 @@ mediaRoutes.get("/admin/photos", async (c) => {
           {results.map((r) => (
             <tr>
               <td class="l">
-                <a href={imgurUrl(r.ref)}>
-                  <img src={imgurUrl(r.ref, "t")} width={120} alt="" loading="lazy" />
-                </a>
+                {r.kind === "instagram" ? (
+                  <a href={instagramUrl(r.ref)}>Instagram post</a>
+                ) : (
+                  <a href={imgurUrl(r.ref)}>
+                    <img src={imgurUrl(r.ref, "t")} width={120} alt="" loading="lazy" />
+                  </a>
+                )}
               </td>
               <td class="l">
                 <a href={`/teams/${r.team}?season=${r.season}`}>
@@ -154,21 +160,22 @@ mediaRoutes.get("/admin/photos", async (c) => {
 mediaRoutes.post("/admin/photos", async (c) => {
   if (!(await isAdmin(c))) return c.redirect("/admin");
   const f = await c.req.parseBody();
-  const ref = parseImgur(String(f.url ?? ""));
+  const media = parseMedia(String(f.url ?? ""));
   const team = Number(f.team);
   const season = Number(f.season);
-  if (!ref || !Number.isInteger(team) || !isSeason(season))
-    return c.html(<Msg title="Bad team, season or Imgur link" back="/admin/photos" />, 400, noStore);
+  if (!media || !Number.isInteger(team) || !isSeason(season))
+    return c.html(<Msg title="Bad team, season or link" back="/admin/photos" />, 400, noStore);
   const now = new Date().toISOString();
   await c.env.DB.prepare(
     `INSERT INTO team_media (team, season, kind, ref, caption, status, submitted_by, created_at, reviewed_at)
-     VALUES (?, ?, 'imgur', ?, ?, 'approved', 'admin', ?, ?)
+     VALUES (?, ?, ?, ?, ?, 'approved', 'admin', ?, ?)
      ON CONFLICT (team, kind, ref) DO UPDATE SET status = 'approved', reviewed_at = ?`,
   )
     .bind(
       team,
       season,
-      ref,
+      media.kind,
+      media.ref,
       String(f.caption ?? "")
         .trim()
         .slice(0, 120) || null,
