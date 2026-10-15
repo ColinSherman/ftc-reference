@@ -16,13 +16,14 @@ const HOUR = 60 * MIN;
 
 type Status = "ok" | "warn" | "fail" | "info";
 
-export function AdminNav(props: { active: "overview" | "videos" | "runs" }) {
+export function AdminNav(props: { active: "overview" | "videos" | "photos" | "runs" }) {
   const link = (k: typeof props.active, href: string, label: string) =>
     props.active === k ? <b>{label}</b> : <a href={href}>{label}</a>;
   return (
     <div class="tabs">
       {link("overview", "/admin", "Overview")}
       {link("videos", "/admin/videos", "Videos")}
+      {link("photos", "/admin/photos", "Photos")}
       {link("runs", "/admin/runs", "Sync log")}
       <form method="post" action="/admin/logout" style="margin-left:auto">
         <button type="submit" class="go">

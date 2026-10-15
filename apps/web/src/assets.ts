@@ -51,6 +51,10 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .ht{background:rgb(var(--heat) / calc(var(--h,0) * var(--heat-a)))}
 .av{display:inline-block;width:20px;height:20px;border-radius:3px;background:var(--tile);box-shadow:0 0 0 1px var(--line);vertical-align:-5px;margin-right:6px;object-fit:contain}
 .av0{background:var(--head)}
+.flag{display:inline-block;width:20px;height:15px;vertical-align:-2px;margin-right:6px;border-radius:2px;box-shadow:0 0 0 1px var(--line);object-fit:cover}
+.photos{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 10px}.photos figure{margin:0;width:200px}.photos img{display:block;width:200px;height:150px;object-fit:cover;border-radius:6px;background:var(--tile);box-shadow:0 0 0 1px var(--line)}.photos figcaption{font-size:12px;color:var(--muted);margin-top:2px}
+.hero{width:160px;height:120px;object-fit:cover;border-radius:6px;box-shadow:0 0 0 1px var(--line);background:var(--tile)}
+.psub summary{cursor:pointer;color:var(--link)}.psub form{margin:6px 0;max-width:520px}
 .av.xl{width:80px;height:80px;border-radius:6px;margin:0;image-rendering:pixelated;vertical-align:top}
 .card{display:flex;gap:18px;align-items:flex-start;margin:6px 0 4px;flex-wrap:wrap}.card h1{margin-top:0}
 .card .who{flex:1;min-width:260px}

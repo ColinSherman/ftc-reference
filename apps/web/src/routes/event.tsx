@@ -436,7 +436,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       d.prepare("SELECT * FROM events WHERE season = ? AND code = ?").bind(season, code),
       d
         .prepare(
-          `SELECT r.*, t.name_short, s.opr_np, av.key AS av FROM rankings r
+          `SELECT r.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, s.opr_np, av.key AS av FROM rankings r
            LEFT JOIN teams t ON t.number = r.team
            LEFT JOIN team_avatars av ON av.team = r.team
            LEFT JOIN team_event_stats s ON s.season = r.season AND s.event_code = r.event_code AND s.team = r.team
@@ -455,7 +455,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         .bind(season, code),
       d
         .prepare(
-          `SELECT s.*, t.name_short, av.key AS av FROM team_event_stats s
+          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM team_event_stats s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.event_code = ? ORDER BY s.opr_np DESC`,
@@ -696,7 +696,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                     <a href={`/teams/${r.team}?season=${season}`}>{r.team}</a>
                   </td>
                   <td class="l">
-                    <TeamName team={r.team} name={r.name_short} av={r.av} />
+                    <TeamName team={r.team} name={r.name_short} av={r.av} loc={r as never} />
                   </td>
                   {!remote && <td data-v={r.wins + r.ties / 2}>{wlt(r.wins, r.losses, r.ties)}</td>}
                   <td>{f2(r.sort1)}</td>
@@ -757,7 +757,14 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
                 {stats.map((s) => (
                   <tr>
                     <td class="l" data-v={s.team}>
-                      <TeamName team={s.team} name={s.name_short} av={s.av} num season={season} />
+                      <TeamName
+                        team={s.team}
+                        name={s.name_short}
+                        av={s.av}
+                        num
+                        season={season}
+                        loc={s as never}
+                      />
                     </td>
                     {!remote && <td data-v={s.wins}>{wlt(s.wins ?? 0, s.losses ?? 0, s.ties ?? 0)}</td>}
                     {statCols.map((col) => (
