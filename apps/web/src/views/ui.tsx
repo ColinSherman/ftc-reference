@@ -1,15 +1,20 @@
 import { ALL_SEASONS, type Component, SEASONS, seasonLabel } from "@ftcref/seasons";
 import type { Child } from "hono/jsx";
-import { flagEmoji } from "../flags";
+import { flagCode } from "../flags";
 
-/** Country flag. Hover shows the country name. Nothing when there is no flag. */
+/** Colored flag picture. Hover shows the country name. Nothing when there is no flag. */
 export function Flag(props: { country?: string | null }) {
-  const emoji = flagEmoji(props.country);
-  if (!emoji) return null;
+  const code = flagCode(props.country);
+  if (!code) return null;
   return (
-    <span class="flag" title={props.country ?? undefined}>
-      {emoji}
-    </span>
+    <img
+      class="flag"
+      src={`/flags/${code}.svg`}
+      width={16}
+      height={12}
+      alt=""
+      title={props.country ?? undefined}
+    />
   );
 }
 

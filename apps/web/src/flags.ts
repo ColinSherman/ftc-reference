@@ -154,9 +154,8 @@ const ISO: Record<string, string> = {
   Zimbabwe: "ZW",
 };
 
-/** Regional-indicator flag, or "" when the country has no flag. */
-export function flagEmoji(country: string | null | undefined): string {
+/** Lowercase ISO code for `/flags/{code}.svg`, or "" when the country has no flag. */
+export function flagCode(country: string | null | undefined): string {
   const iso = country ? ISO[country] : undefined;
-  if (!iso) return "";
-  return String.fromCodePoint(...[...iso].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+  return iso ? iso.toLowerCase() : "";
 }

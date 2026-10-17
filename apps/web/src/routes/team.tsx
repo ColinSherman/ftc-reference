@@ -5,7 +5,7 @@ import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { regionName } from "../regions";
 import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
-import { Av, CompTh, Result, StatBox, TeamLinks, Th, VidCell } from "../views/ui";
+import { Av, CompTh, Flag, Result, StatBox, TeamLinks, Th, VidCell } from "../views/ui";
 
 export const teamRoutes = new Hono<{ Bindings: Env }>();
 
@@ -173,7 +173,8 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
             <div class="bio">
               {location && (
                 <div>
-                  <b>Location:</b> {location}
+                  <b>Location:</b> <Flag country={team.country == null ? null : String(team.country)} />{" "}
+                  {location}
                 </div>
               )}
               {team.home_region && (

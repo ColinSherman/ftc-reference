@@ -5,6 +5,7 @@
   "account_id": "a92ff6c4b72094e5030585f2363b940a",
   "main": "src/index.tsx",
   "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./public", "html_handling": "none", "not_found_handling": "none" },
   "workers_dev": true,
   // Custom Domains create the DNS records + certs automatically. www 301s to the apex (see index.tsx).
   "routes": [
@@ -31,6 +32,7 @@
     "staging": {
       "name": "ftcref-web-stage",
       "account_id": "a92ff6c4b72094e5030585f2363b940a",
+      "assets": { "directory": "./public", "html_handling": "none", "not_found_handling": "none" },
       "workers_dev": true,
       "routes": [{ "pattern": "stage.ftc-reference.com", "custom_domain": true }],
       "observability": { "enabled": true, "head_sampling_rate": 0.1 },

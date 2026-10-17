@@ -66,7 +66,7 @@ html[data-stats=all] .os i:before{left:13px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 22px;align-items:start}
 .box h3{display:flex;align-items:baseline;gap:8px;margin:14px 0 4px;padding:3px 0;border-bottom:2px solid var(--rule);font-size:16px}
 .st td.wk{white-space:normal;min-width:0;overflow-wrap:anywhere}.st td.wk a{white-space:normal}
-.flag{display:inline-block;font-size:13px;line-height:1;margin-right:3px;vertical-align:-1px}
+.flag{display:inline-block;width:16px;height:12px;object-fit:cover;margin-right:4px;vertical-align:-2px;border-radius:1px;box-shadow:0 0 0 1px var(--line)}
 a.mark{font-size:11px;margin-left:5px;text-decoration:none}
 .st td.wk a.mark{white-space:nowrap}
 a.mark.res{color:var(--win)}a.mark.vid{color:var(--red)}a.mark:hover{color:var(--fg)}
