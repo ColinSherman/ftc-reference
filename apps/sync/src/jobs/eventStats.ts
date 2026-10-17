@@ -1,5 +1,5 @@
 import { nowIso, runBatched, upsertStatements } from "@ftcref/db";
-import { officialKindIn } from "@ftcref/seasons";
+import { seasonKindIn } from "@ftcref/seasons";
 import { type AllianceObs, computeOpr, mean, stddev } from "@ftcref/stats";
 
 interface ScoreJoin {
@@ -145,7 +145,8 @@ type SeasonStatsTable = "team_season_stats" | "team_official_stats";
 
 /**
  * Season rollup per team: best / latest event OPRs and best single-match NP.
- * Writes every event into team_season_stats, and official events only into team_official_stats.
+ * Writes every event into team_season_stats, and season events (official plus non-advancement)
+ * into team_official_stats. Off-season stays in the all-events table only.
  */
 export async function recomputeSeasonStats(db: D1Database, season: number, teams: number[]) {
   const now = nowIso();
@@ -161,7 +162,7 @@ async function rollupSeasonStats(
   official: boolean,
   now: string,
 ) {
-  const kind = official ? `AND ${officialKindIn("e")}` : "";
+  const kind = official ? `AND ${seasonKindIn("e")}` : "";
   for (let i = 0; i < teams.length; i += 90) {
     const chunk = teams.slice(i, i + 90);
     const ph = chunk.map(() => "?").join(",");

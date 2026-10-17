@@ -1,6 +1,6 @@
--- Official-event season rollup. team_season_stats keeps every event (scrimmages and off-season
--- included). This table is the same shape, limited to FTC Scout's official kinds, and is what
--- leaderboards read by default. The sync worker refreshes both whenever an event is recomputed.
+-- Season rollup used by the default leaderboards. team_season_stats keeps every event.
+-- This table counts official kinds plus non-advancement (scrimmages). Off-season is excluded
+-- until the header switch is on. The sync worker refreshes both whenever an event is recomputed.
 -- Historical rows are filled below; later seasons are written by recomputeSeasonStats.
 
 CREATE TABLE team_official_stats (
@@ -28,7 +28,7 @@ CREATE INDEX tos_by_np   ON team_official_stats (season, best_opr_np DESC);
 CREATE INDEX tos_by_team ON team_official_stats (team);
 
 -- One statement per season so a full-history pass stays inside D1's statement time limit.
--- Kinds must match OFFICIAL_KINDS in packages/seasons/src/official.ts.
+-- Kinds must match SEASON_KINDS in packages/seasons/src/official.ts.
 
 INSERT INTO team_official_stats (
   season, team, events_played, played, wins, losses, ties,
@@ -42,7 +42,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2019 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2019 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -83,7 +83,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2019
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -109,7 +109,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2020 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2020 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -150,7 +150,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2020
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -176,7 +176,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2021 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2021 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -217,7 +217,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2021
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -243,7 +243,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2022 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2022 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -284,7 +284,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2022
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -310,7 +310,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2023 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2023 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -351,7 +351,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2023
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -377,7 +377,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2024 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2024 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -418,7 +418,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2024
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -444,7 +444,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2025 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2025 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -485,7 +485,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2025
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,
@@ -511,7 +511,7 @@ WITH scoped AS (
          t.opr_c1, t.opr_c2, t.opr_c3, t.opr_c4, e.date_end
   FROM team_event_stats t
   JOIN events e ON e.season = t.season AND e.code = t.event_code
-  WHERE t.season = 2026 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+  WHERE t.season = 2026 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
 ),
 agg AS (
   SELECT season, team,
@@ -552,7 +552,7 @@ np AS (
     JOIN matches m ON m.id = mt.match_id AND m.season = 2026
     JOIN events e ON e.season = m.season AND e.code = m.event_code
     JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot')
+    WHERE mt.surrogate = 0 AND e.kind IN ('LeagueMeet','Qualifier','LeagueTournament','Championship','FIRSTChampionship','SuperQualifier','Premier','Pilot','NonAdvancement','Scrimmage')
   ) WHERE rn = 1
 )
 SELECT a.season, a.team, a.events_played, a.played, a.wins, a.losses, a.ties,

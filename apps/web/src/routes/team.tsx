@@ -1,9 +1,9 @@
-import { getSeason, isSeason, OFFICIAL_KINDS, officialKindIn, seasonLabel } from "@ftcref/seasons";
+import { getSeason, isSeason, SEASON_KINDS, seasonKindIn, seasonLabel } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { regionName } from "../regions";
-import { StatsScope, seasonStatsTable, statsMode } from "../statsScope";
+import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
 import { Av, CompTh, Result, StatBox, TeamLinks, Th, VidCell } from "../views/ui";
 
@@ -27,7 +27,7 @@ interface LogRow {
   teams: string | null;
 }
 
-const OFFICIAL = new Set<string>(OFFICIAL_KINDS);
+const COUNTED = new Set<string>(SEASON_KINDS);
 
 type Ev = Record<string, number | null> & {
   code: string;
@@ -61,7 +61,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     const n = Number(c.req.param("n"));
     const mode = statsMode(c);
     const table = seasonStatsTable(mode);
-    const awardKind = mode === "official" ? `AND ${officialKindIn("ae")}` : "";
+    const awardKind = mode === "official" ? `AND ${seasonKindIn("ae")}` : "";
     const d = db(c);
     const [teamR, careerR] = await d.batch([
       d
@@ -142,13 +142,12 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     const ts = tsR?.results[0] as Record<string, string | null> | undefined;
     const allEvents = (evR?.results ?? []) as unknown as Ev[];
     const events =
-      mode === "all" ? allEvents : allEvents.filter((e) => e.kind != null && OFFICIAL.has(e.kind));
-    const hiddenEvents = allEvents.length - events.length;
+      mode === "all" ? allEvents : allEvents.filter((e) => e.kind != null && COUNTED.has(e.kind));
     const shown = new Set(events.map((e) => e.code));
     const log = ((logR?.results ?? []) as LogRow[]).filter((m) => mode === "all" || shown.has(m.event_code));
     const awards = (
       (awR?.results ?? []) as { name: string; event_code: string; event_name: string; kind: string | null }[]
-    ).filter((a) => mode === "all" || (a.kind != null && OFFICIAL.has(a.kind)));
+    ).filter((a) => mode === "all" || (a.kind != null && COUNTED.has(a.kind)));
     const ss = career.find((r) => r.season === season);
     const location = [team.city, team.state_prov, team.country].filter(Boolean).join(", ");
 
@@ -206,8 +205,6 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
             {team.name_full && <div class="note">{String(team.name_full).slice(0, 220)}</div>}
           </div>
         </div>
-
-        <StatsScope url={c.req.url} mode={mode} hidden={hiddenEvents} />
 
         <h2 id="career">Career</h2>
         <Table>

@@ -1,8 +1,8 @@
-import { ALL_SEASONS, getSeason, isSeason, officialKindIn, SEASONS, seasonLabel } from "@ftcref/seasons";
+import { ALL_SEASONS, getSeason, isSeason, SEASONS, seasonKindIn, seasonLabel } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
-import { StatsScope, seasonStatsTable, statsMode } from "../statsScope";
+import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
 import {
   Box,
@@ -23,7 +23,7 @@ homeRoutes.get("/", (c) =>
     const d = db(c);
     const mode = statsMode(c);
     const table = seasonStatsTable(mode);
-    const official = mode === "official" ? `AND ${officialKindIn("e")}` : "";
+    const counted = mode === "official" ? `AND ${seasonKindIn("e")}` : "";
     const desc = getSeason(SEASON);
     const today = new Date().toISOString().slice(0, 10);
     const [countsR, evR, topR, autoR, highR, inspireR] = await d.batch([
@@ -67,7 +67,7 @@ homeRoutes.get("/", (c) =>
                   EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video
            FROM match_scores s JOIN matches m ON m.id = s.match_id
            JOIN events e ON e.season = m.season AND e.code = m.event_code
-           WHERE s.season = ? ${official} ORDER BY s.np DESC LIMIT 10`,
+           WHERE s.season = ? ${counted} ORDER BY s.np DESC LIMIT 10`,
         )
         .bind(SEASON),
       d
@@ -75,7 +75,7 @@ homeRoutes.get("/", (c) =>
           `SELECT a.team, a.event_code, e.name AS event_name, t.name_short, av.key AS av FROM awards a
            JOIN events e ON e.season = a.season AND e.code = a.event_code
            LEFT JOIN teams t ON t.number = a.team LEFT JOIN team_avatars av ON av.team = a.team
-           WHERE a.season = ? AND a.name LIKE 'Inspire%' AND a.series <= 1 AND a.team > 0 ${official}
+           WHERE a.season = ? AND a.name LIKE 'Inspire%' AND a.series <= 1 AND a.team > 0 ${counted}
            ORDER BY e.date_end DESC LIMIT 10`,
         )
         .bind(SEASON),
@@ -142,7 +142,6 @@ homeRoutes.get("/", (c) =>
           {fmt(counts.events)} events · {fmt(counts.teams)} teams · {fmt(counts.matches)} matches scored ·{" "}
           {live.length} live now · <a href="/seasons">all seasons since 2019</a>
         </p>
-        <StatsScope url={c.req.url} mode={mode} />
         <div class="grid">
           <Box title="This Week" more={{ href: `/events/${SEASON}`, label: "All events" }}>
             {events.length === 0 ? (
@@ -178,7 +177,7 @@ homeRoutes.get("/", (c) =>
 
           <Box title="NP OPR Leaders" more={{ href: `/seasons/${SEASON}/leaders`, label: "Leaderboard" }}>
             {top.length === 0 ? (
-              <p class="note">{mode === "official" ? "No official results yet." : "No results yet."}</p>
+              <p class="note">No results yet.</p>
             ) : (
               <Table>
                 <thead>
@@ -207,7 +206,7 @@ homeRoutes.get("/", (c) =>
 
           <Box title="Highest Scores" more={{ href: `/seasons/${SEASON}/leaders?sort=maxnp`, label: "More" }}>
             {high.length === 0 ? (
-              <p class="note">{mode === "official" ? "No official results yet." : "No results yet."}</p>
+              <p class="note">No results yet.</p>
             ) : (
               <Table>
                 <thead>
@@ -247,7 +246,7 @@ homeRoutes.get("/", (c) =>
 
           <Box title="Auto Leaders" more={{ href: `/seasons/${SEASON}/leaders?sort=auto`, label: "More" }}>
             {auto.length === 0 ? (
-              <p class="note">{mode === "official" ? "No official results yet." : "No results yet."}</p>
+              <p class="note">No results yet.</p>
             ) : (
               <Table>
                 <thead>
@@ -327,7 +326,7 @@ homeRoutes.get("/seasons", (c) =>
         ? `(SELECT MAX(sc.np) FROM match_scores sc
             JOIN matches hm ON hm.id = sc.match_id AND hm.season = y.year
             JOIN events he ON he.season = hm.season AND he.code = hm.event_code
-            WHERE ${officialKindIn("he")})`
+            WHERE ${seasonKindIn("he")})`
         : `(SELECT MAX(np) FROM match_scores s WHERE s.season = y.year)`;
     const { results } = await db(c)
       .prepare(
@@ -357,7 +356,6 @@ homeRoutes.get("/seasons", (c) =>
         description="Every FIRST Tech Challenge season since 2019: events, leaders and records."
       >
         <h1>Seasons</h1>
-        <StatsScope url={c.req.url} mode={mode} />
         <p class="sitestats">
           FIRST Tech Challenge since SKYSTONE (2019). Older seasons are still being loaded where noted.
         </p>
@@ -467,7 +465,6 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
         <h1>
           {seasonLabel(season)} Leaders · {desc.game}
         </h1>
-        <StatsScope url={c.req.url} mode={mode} />
         <form class="filters" method="get">
           {/* biome-ignore lint/a11y/noLabelWithoutControl: SeasonSelect renders the select */}
           <label>
@@ -489,9 +486,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
           </button>
         </form>
         <p class="note">
-          Best = best single-event OPR
-          {mode === "official" ? " at official events" : ", including scrimmages and off-season"}. Top 1,000
-          by {colLabel.toLowerCase()} shown; click headers to re-sort.
+          {`Best = best single-event OPR${mode === "official" ? ". Off-season events are excluded" : ", including off-season"}. Top 1,000 by ${colLabel.toLowerCase()} shown; click headers to re-sort.`}
         </p>
         {results.length === 0 ? (
           <p class="note">

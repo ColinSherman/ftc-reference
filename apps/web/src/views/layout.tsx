@@ -31,6 +31,17 @@ export function Layout(props: { title: string; description?: string; children: C
             <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
               ◐ Auto
             </button>
+            <a
+              id="os"
+              class="os"
+              href="?stats=all"
+              role="switch"
+              aria-checked="false"
+              title="Off-season events are left out of records and leaderboards"
+            >
+              Off-season
+              <i />
+            </a>
           </div>
         </div>
         <main>{props.children}</main>

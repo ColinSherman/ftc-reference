@@ -38,7 +38,12 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .st td.r{color:var(--red)}.st td.b{color:var(--blue)}.st td.w{font-weight:bold}
 .st tfoot td{font-weight:bold;border-top:2px solid var(--fg)}
 .note{color:var(--muted);font-size:11px}
-.scope{margin:2px 0 8px}.scope label{display:inline-flex;align-items:center;gap:6px;color:var(--fg);cursor:pointer}.scope input{margin:0}
+.os{display:inline-flex;align-items:center;gap:6px;color:var(--brand-fg);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}
+.os:hover{text-decoration:none}
+.os i{width:28px;height:16px;border:1px solid rgba(255,255,255,.55);border-radius:8px;position:relative;flex:none}
+.os i:before{content:"";position:absolute;top:1px;left:1px;width:12px;height:12px;border-radius:50%;background:var(--brand-fg)}
+html[data-stats=all] .os i{background:rgba(255,255,255,.28)}
+html[data-stats=all] .os i:before{left:13px}
 .pill{display:inline-block;padding:0 5px;border-radius:2px;font-size:11px;background:var(--head);border:1px solid var(--line)}
 .live{background:var(--red);color:#fff;border-color:var(--red)}
 .st th.rh{background:var(--red-bg);color:var(--red)}.st th.bh{background:var(--blue-bg);color:var(--blue)}
@@ -131,16 +136,22 @@ export const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON
 
 /** Runs in <head> before first paint so a saved theme never flashes the wrong colors. */
 export const THEME_HEAD_JS =
-  'try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}';
+  'try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}' +
+  'try{if(/(?:^|; )stats=all(?:;|$)/.test(document.cookie))document.documentElement.dataset.stats="all"}catch(e){}';
 
 /** Header button: cycles auto → light → dark, remembered per browser. */
-export const THEME_TOGGLE_JS = `(function(){var b=document.getElementById("tt");if(!b)return;
+export const THEME_TOGGLE_JS =
+  `(function(){var b=document.getElementById("tt");if(!b)return;
 var L={auto:"◐ Auto",light:"☀ Light",dark:"☾ Dark"},N={auto:"light",light:"dark",dark:"auto"};
 var cur=function(){return document.documentElement.dataset.theme||"auto"};
 var show=function(){var c=cur();b.textContent=L[c];b.title="Theme: "+c+" (click to change)"};show();
 b.addEventListener("click",function(){var n=N[cur()],r=document.documentElement;
 if(n==="auto")delete r.dataset.theme;else r.dataset.theme=n;
-try{n==="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",n)}catch(e){}show()})})();document.addEventListener("keydown",function(e){var a=document.activeElement;if(e.key==="/"&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){var i=document.querySelector(".top input");if(i){e.preventDefault();i.focus()}}});`.replace(
-  /\n/g,
-  "",
-);
+try{n==="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",n)}catch(e){}show()})})();` +
+  `(function(){var a=document.getElementById("os");if(!a)return;var on=function(){return document.documentElement.dataset.stats==="all"};
+var show=function(){var v=on();a.setAttribute("aria-checked",v?"true":"false");a.title=v?"Including off-season events in records and leaderboards":"Off-season events are left out of records and leaderboards"};
+show();a.addEventListener("click",function(e){e.preventDefault();var u=new URL(location.href);u.searchParams.set("stats",on()?"official":"all");location.href=u.pathname+u.search})})();` +
+  `document.addEventListener("keydown",function(e){var a=document.activeElement;if(e.key==="/"&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){var i=document.querySelector(".top input");if(i){e.preventDefault();i.focus()}}});`.replace(
+    /\n/g,
+    "",
+  );
