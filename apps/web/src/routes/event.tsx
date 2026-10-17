@@ -1,4 +1,11 @@
-import { getSeason, isSeason, type SeasonDescriptor, seasonLabel, weekOf } from "@ftcref/seasons";
+import {
+  getSeason,
+  isSeason,
+  OFFICIAL_KINDS,
+  type SeasonDescriptor,
+  seasonLabel,
+  weekOf,
+} from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
@@ -53,16 +60,7 @@ const COMPETITION = [
   "NonAdvancement",
   "Pilot",
 ];
-const OFFICIAL = [
-  "LeagueMeet",
-  "Qualifier",
-  "LeagueTournament",
-  "Championship",
-  "FIRSTChampionship",
-  "SuperQualifier",
-  "Premier",
-  "Pilot",
-];
+const OFFICIAL: string[] = [...OFFICIAL_KINDS];
 const NON_COMPETITION = [
   "Kickoff",
   "Workshop",

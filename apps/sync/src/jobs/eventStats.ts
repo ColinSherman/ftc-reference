@@ -1,4 +1,5 @@
 import { nowIso, runBatched, upsertStatements } from "@ftcref/db";
+import { officialKindIn } from "@ftcref/seasons";
 import { type AllianceObs, computeOpr, mean, stddev } from "@ftcref/stats";
 
 interface ScoreJoin {
@@ -140,9 +141,27 @@ export async function recomputeEventStats(db: D1Database, season: number, code: 
   return rows.length;
 }
 
-/** Season rollup per team: best / latest event OPRs and best single-match NP. */
+type SeasonStatsTable = "team_season_stats" | "team_official_stats";
+
+/**
+ * Season rollup per team: best / latest event OPRs and best single-match NP.
+ * Writes every event into team_season_stats, and official events only into team_official_stats.
+ */
 export async function recomputeSeasonStats(db: D1Database, season: number, teams: number[]) {
   const now = nowIso();
+  await rollupSeasonStats(db, season, teams, "team_season_stats", false, now);
+  await rollupSeasonStats(db, season, teams, "team_official_stats", true, now);
+}
+
+async function rollupSeasonStats(
+  db: D1Database,
+  season: number,
+  teams: number[],
+  table: SeasonStatsTable,
+  official: boolean,
+  now: string,
+) {
+  const kind = official ? `AND ${officialKindIn("e")}` : "";
   for (let i = 0; i < teams.length; i += 90) {
     const chunk = teams.slice(i, i + 90);
     const ph = chunk.map(() => "?").join(",");
@@ -151,7 +170,7 @@ export async function recomputeSeasonStats(db: D1Database, season: number, teams
         .prepare(
           `SELECT t.*, e.date_end FROM team_event_stats t
            JOIN events e ON e.season = t.season AND e.code = t.event_code
-           WHERE t.season = ? AND t.team IN (${ph})`,
+           WHERE t.season = ? AND t.team IN (${ph}) ${kind}`,
         )
         .bind(season, ...chunk),
       db
@@ -159,8 +178,9 @@ export async function recomputeSeasonStats(db: D1Database, season: number, teams
           `SELECT mt.team, s.match_id, MAX(s.np) AS best_np
            FROM match_teams mt
            JOIN matches m ON m.id = mt.match_id AND m.season = ?
+           JOIN events e ON e.season = m.season AND e.code = m.event_code
            JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-           WHERE mt.team IN (${ph}) AND mt.surrogate = 0
+           WHERE mt.team IN (${ph}) AND mt.surrogate = 0 ${kind}
            GROUP BY mt.team`,
         )
         .bind(season, ...chunk),
@@ -210,6 +230,15 @@ export async function recomputeSeasonStats(db: D1Database, season: number, teams
         },
       ];
     });
-    await runBatched(db, upsertStatements(db, "team_season_stats", rows, ["season", "team"]));
+    const drop = official ? chunk.filter((team) => !rows.some((r) => r.team === team)) : [];
+    const clear =
+      drop.length > 0
+        ? [
+            db
+              .prepare(`DELETE FROM ${table} WHERE season = ? AND team IN (${drop.map(() => "?").join(",")})`)
+              .bind(season, ...drop),
+          ]
+        : [];
+    await runBatched(db, [...clear, ...upsertStatements(db, table, rows, ["season", "team"])]);
   }
 }

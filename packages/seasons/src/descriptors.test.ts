@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_SEASONS, getSeason, scoreColumns, weekOf } from "./index";
+import { ALL_SEASONS, getSeason, OFFICIAL_KINDS, officialKindIn, scoreColumns, weekOf } from "./index";
 
 describe("season descriptors", () => {
   it("covers 2019 through 2026, newest first", () => {
@@ -53,6 +53,23 @@ describe("season descriptors", () => {
   it("tolerates missing fields", () => {
     const row = scoreColumns(getSeason(2022), {});
     expect(row.np).toBe(0);
+  });
+
+  it("counts league meets through premier events as official, and leaves scrimmages out", () => {
+    expect([...OFFICIAL_KINDS]).toEqual([
+      "LeagueMeet",
+      "Qualifier",
+      "LeagueTournament",
+      "Championship",
+      "FIRSTChampionship",
+      "SuperQualifier",
+      "Premier",
+      "Pilot",
+    ]);
+    expect(officialKindIn("e")).toContain("e.kind IN (");
+    expect(officialKindIn("e")).not.toContain("OffSeason");
+    expect(officialKindIn("e")).not.toContain("NonAdvancement");
+    expect(officialKindIn("e")).not.toContain("Scrimmage");
   });
 
   it("numbers weeks from the Monday before kickoff", () => {

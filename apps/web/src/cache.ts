@@ -1,3 +1,4 @@
+import { getCookie } from "hono/cookie";
 import type { AppContext } from "./env";
 
 /**
@@ -19,6 +20,8 @@ export async function cached(
   const url = new URL(c.req.url);
   url.searchParams.set("__v", vers.map((v) => v ?? "0").join("."));
   url.searchParams.set("__d", c.env.CF_VERSION?.id ?? "dev");
+  // Official vs all-events totals are different pages. The cookie is the viewer's choice.
+  url.searchParams.set("__s", getCookie(c, "stats") === "all" ? "all" : "off");
   const key = new Request(url.toString(), { method: "GET" });
   const cache = caches.default;
 

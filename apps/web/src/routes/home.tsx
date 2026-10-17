@@ -1,7 +1,8 @@
-import { ALL_SEASONS, getSeason, isSeason, SEASONS, seasonLabel } from "@ftcref/seasons";
+import { ALL_SEASONS, getSeason, isSeason, officialKindIn, SEASONS, seasonLabel } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
+import { StatsScope, seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
 import {
   Box,
@@ -20,6 +21,9 @@ export const homeRoutes = new Hono<{ Bindings: Env }>();
 homeRoutes.get("/", (c) =>
   cached(c, { ttl: 60 }, async () => {
     const d = db(c);
+    const mode = statsMode(c);
+    const table = seasonStatsTable(mode);
+    const official = mode === "official" ? `AND ${officialKindIn("e")}` : "";
     const desc = getSeason(SEASON);
     const today = new Date().toISOString().slice(0, 10);
     const [countsR, evR, topR, autoR, highR, inspireR] = await d.batch([
@@ -43,14 +47,14 @@ homeRoutes.get("/", (c) =>
       d
         .prepare(
           `SELECT s.team, t.name_short, av.key AS av, s.best_opr_np, s.best_event, s.wins, s.losses, s.ties
-           FROM team_season_stats s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
+           FROM ${table} s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.best_opr_np IS NOT NULL ORDER BY s.best_opr_np DESC LIMIT 15`,
         )
         .bind(SEASON),
       d
         .prepare(
           `SELECT s.team, t.name_short, av.key AS av, s.best_opr_auto, s.best_opr_c1
-           FROM team_season_stats s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
+           FROM ${table} s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.best_opr_auto IS NOT NULL ORDER BY s.best_opr_auto DESC LIMIT 10`,
         )
         .bind(SEASON),
@@ -62,7 +66,8 @@ homeRoutes.get("/", (c) =>
                    WHERE x.match_id = m.id AND x.alliance = s.alliance) AS teams,
                   EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video
            FROM match_scores s JOIN matches m ON m.id = s.match_id
-           WHERE s.season = ? ORDER BY s.np DESC LIMIT 10`,
+           JOIN events e ON e.season = m.season AND e.code = m.event_code
+           WHERE s.season = ? ${official} ORDER BY s.np DESC LIMIT 10`,
         )
         .bind(SEASON),
       d
@@ -70,7 +75,7 @@ homeRoutes.get("/", (c) =>
           `SELECT a.team, a.event_code, e.name AS event_name, t.name_short, av.key AS av FROM awards a
            JOIN events e ON e.season = a.season AND e.code = a.event_code
            LEFT JOIN teams t ON t.number = a.team LEFT JOIN team_avatars av ON av.team = a.team
-           WHERE a.season = ? AND a.name LIKE 'Inspire%' AND a.series <= 1 AND a.team > 0
+           WHERE a.season = ? AND a.name LIKE 'Inspire%' AND a.series <= 1 AND a.team > 0 ${official}
            ORDER BY e.date_end DESC LIMIT 10`,
         )
         .bind(SEASON),
@@ -137,6 +142,7 @@ homeRoutes.get("/", (c) =>
           {fmt(counts.events)} events · {fmt(counts.teams)} teams · {fmt(counts.matches)} matches scored ·{" "}
           {live.length} live now · <a href="/seasons">all seasons since 2019</a>
         </p>
+        <StatsScope url={c.req.url} mode={mode} />
         <div class="grid">
           <Box title="This Week" more={{ href: `/events/${SEASON}`, label: "All events" }}>
             {events.length === 0 ? (
@@ -171,89 +177,101 @@ homeRoutes.get("/", (c) =>
           </Box>
 
           <Box title="NP OPR Leaders" more={{ href: `/seasons/${SEASON}/leaders`, label: "Leaderboard" }}>
-            <Table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th class="l">Team</th>
-                  <Th k="NP OPR" />
-                  <Th k="W-L-T" />
-                </tr>
-              </thead>
-              <tbody>
-                {top.map((t, i) => (
+            {top.length === 0 ? (
+              <p class="note">{mode === "official" ? "No official results yet." : "No results yet."}</p>
+            ) : (
+              <Table>
+                <thead>
                   <tr>
-                    <td>{i + 1}</td>
-                    <td class="l">
-                      <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} />
-                    </td>
-                    <td class="w">{f1(t.best_opr_np)}</td>
-                    <td data-v={t.wins}>{wlt(t.wins, t.losses, t.ties)}</td>
+                    <th>#</th>
+                    <th class="l">Team</th>
+                    <Th k="NP OPR" />
+                    <Th k="W-L-T" />
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {top.map((t, i) => (
+                    <tr>
+                      <td>{i + 1}</td>
+                      <td class="l">
+                        <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} />
+                      </td>
+                      <td class="w">{f1(t.best_opr_np)}</td>
+                      <td data-v={t.wins}>{wlt(t.wins, t.losses, t.ties)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
           </Box>
 
           <Box title="Highest Scores" more={{ href: `/seasons/${SEASON}/leaders?sort=maxnp`, label: "More" }}>
-            <Table>
-              <thead>
-                <tr>
-                  <th class="vc" title="Video" />
-                  <th title="No-penalty alliance score">NP</th>
-                  <th class="l">Alliance</th>
-                  <th class="l">Match</th>
-                </tr>
-              </thead>
-              <tbody>
-                {high.map((h) => {
-                  const href = `/events/${SEASON}/${h.event_code}/${matchSlug(h.level, h.series, h.match_number)}`;
-                  const teams = (h.teams ?? "").split(" ").map((x) => {
-                    const [team, av] = x.split(":");
-                    return { team: Number(team), av: av || null };
-                  });
-                  return (
-                    <tr>
-                      <VidCell href={href} has={h.has_video} />
-                      <td class="w">{h.np}</td>
-                      <td class={`l ${h.alliance === "R" ? "r" : "b"}`}>
-                        <TeamLinks teams={teams} season={SEASON} />
-                      </td>
-                      <td class="l">
-                        <a href={href}>
-                          {h.event_code} {matchLabel(h.level, h.series, h.match_number)}
-                        </a>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
+            {high.length === 0 ? (
+              <p class="note">{mode === "official" ? "No official results yet." : "No results yet."}</p>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <th class="vc" title="Video" />
+                    <th title="No-penalty alliance score">NP</th>
+                    <th class="l">Alliance</th>
+                    <th class="l">Match</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {high.map((h) => {
+                    const href = `/events/${SEASON}/${h.event_code}/${matchSlug(h.level, h.series, h.match_number)}`;
+                    const teams = (h.teams ?? "").split(" ").map((x) => {
+                      const [team, av] = x.split(":");
+                      return { team: Number(team), av: av || null };
+                    });
+                    return (
+                      <tr>
+                        <VidCell href={href} has={h.has_video} />
+                        <td class="w">{h.np}</td>
+                        <td class={`l ${h.alliance === "R" ? "r" : "b"}`}>
+                          <TeamLinks teams={teams} season={SEASON} />
+                        </td>
+                        <td class="l">
+                          <a href={href}>
+                            {h.event_code} {matchLabel(h.level, h.series, h.match_number)}
+                          </a>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            )}
           </Box>
 
           <Box title="Auto Leaders" more={{ href: `/seasons/${SEASON}/leaders?sort=auto`, label: "More" }}>
-            <Table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th class="l">Team</th>
-                  <Th k="Auto" />
-                  <th title={c1.tip}>{c1.label}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {auto.map((t, i) => (
+            {auto.length === 0 ? (
+              <p class="note">{mode === "official" ? "No official results yet." : "No results yet."}</p>
+            ) : (
+              <Table>
+                <thead>
                   <tr>
-                    <td>{i + 1}</td>
-                    <td class="l">
-                      <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} />
-                    </td>
-                    <td class="w">{f1(t.best_opr_auto)}</td>
-                    <td>{(c1.count ? f2 : f1)(t.best_opr_c1)}</td>
+                    <th>#</th>
+                    <th class="l">Team</th>
+                    <Th k="Auto" />
+                    <th title={c1.tip}>{c1.label}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {auto.map((t, i) => (
+                    <tr>
+                      <td>{i + 1}</td>
+                      <td class="l">
+                        <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} />
+                      </td>
+                      <td class="w">{f1(t.best_opr_auto)}</td>
+                      <td>{(c1.count ? f2 : f1)(t.best_opr_c1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
           </Box>
 
           <Box title="Recent Inspire Award Winners">
@@ -302,15 +320,24 @@ homeRoutes.get("/", (c) =>
 
 homeRoutes.get("/seasons", (c) =>
   cached(c, { ttl: 600 }, async () => {
+    const mode = statsMode(c);
+    const table = seasonStatsTable(mode);
+    const highNp =
+      mode === "official"
+        ? `(SELECT MAX(sc.np) FROM match_scores sc
+            JOIN matches hm ON hm.id = sc.match_id AND hm.season = y.year
+            JOIN events he ON he.season = hm.season AND he.code = hm.event_code
+            WHERE ${officialKindIn("he")})`
+        : `(SELECT MAX(np) FROM match_scores s WHERE s.season = y.year)`;
     const { results } = await db(c)
       .prepare(
         `SELECT y.year, y.backfilled_at, y.backfill_stage,
                 (SELECT COUNT(*) FROM events e WHERE e.season = y.year) AS events,
                 (SELECT COUNT(*) FROM matches m WHERE m.season = y.year AND m.played = 1) AS matches,
-                (SELECT COUNT(*) FROM team_season_stats s WHERE s.season = y.year) AS teams,
-                (SELECT MAX(np) FROM match_scores s WHERE s.season = y.year) AS high_np,
-                (SELECT team FROM team_season_stats s WHERE s.season = y.year ORDER BY best_opr_np DESC LIMIT 1) AS top_team,
-                (SELECT MAX(best_opr_np) FROM team_season_stats s WHERE s.season = y.year) AS top_opr
+                (SELECT COUNT(*) FROM ${table} s WHERE s.season = y.year) AS teams,
+                ${highNp} AS high_np,
+                (SELECT team FROM ${table} s WHERE s.season = y.year ORDER BY best_opr_np DESC LIMIT 1) AS top_team,
+                (SELECT MAX(best_opr_np) FROM ${table} s WHERE s.season = y.year) AS top_opr
          FROM seasons y ORDER BY y.year DESC`,
       )
       .all<{
@@ -330,6 +357,7 @@ homeRoutes.get("/seasons", (c) =>
         description="Every FIRST Tech Challenge season since 2019: events, leaders and records."
       >
         <h1>Seasons</h1>
+        <StatsScope url={c.req.url} mode={mode} />
         <p class="sitestats">
           FIRST Tech Challenge since SKYSTONE (2019). Older seasons are still being loaded where noted.
         </p>
@@ -393,6 +421,8 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
   const season = Number(c.req.param("season"));
   if (!isSeason(season)) return c.notFound();
   return cached(c, { ttl: 300 }, async () => {
+    const mode = statsMode(c);
+    const table = seasonStatsTable(mode);
     const desc = getSeason(season);
     // Sort keys: fixed ones plus the season's four components.
     const sorts: Record<string, [string, string]> = {
@@ -410,7 +440,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     const [col, colLabel] = sorts[sortKey] ?? (sorts.np as [string, string]);
     const { results } = await db(c)
       .prepare(
-        `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM team_season_stats s
+        `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM ${table} s
          LEFT JOIN teams t ON t.number = s.team
          LEFT JOIN team_avatars av ON av.team = s.team
          WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT 1000`,
@@ -437,6 +467,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
         <h1>
           {seasonLabel(season)} Leaders · {desc.game}
         </h1>
+        <StatsScope url={c.req.url} mode={mode} />
         <form class="filters" method="get">
           {/* biome-ignore lint/a11y/noLabelWithoutControl: SeasonSelect renders the select */}
           <label>
@@ -458,7 +489,9 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
           </button>
         </form>
         <p class="note">
-          Best = best single-event OPR. Top 1,000 by {colLabel.toLowerCase()} shown; click headers to re-sort.
+          Best = best single-event OPR
+          {mode === "official" ? " at official events" : ", including scrimmages and off-season"}. Top 1,000
+          by {colLabel.toLowerCase()} shown; click headers to re-sort.
         </p>
         {results.length === 0 ? (
           <p class="note">

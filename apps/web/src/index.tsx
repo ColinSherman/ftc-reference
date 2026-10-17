@@ -23,6 +23,21 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+// `?stats=all|official` remembers the leaderboard scope, then returns to the clean URL.
+app.use("*", async (c, next) => {
+  if (c.req.method === "GET") {
+    const stats = c.req.query("stats");
+    if (stats === "all" || stats === "official") {
+      const url = new URL(c.req.url);
+      url.searchParams.delete("stats");
+      const res = c.redirect(`${url.pathname}${url.search}`, 303);
+      res.headers.append("Set-Cookie", `stats=${stats}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      return res;
+    }
+  }
+  await next();
+});
+
 const favicon = () =>
   new Response(FAVICON_SVG, {
     headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=604800, immutable" },

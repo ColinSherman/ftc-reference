@@ -38,6 +38,7 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .st td.r{color:var(--red)}.st td.b{color:var(--blue)}.st td.w{font-weight:bold}
 .st tfoot td{font-weight:bold;border-top:2px solid var(--fg)}
 .note{color:var(--muted);font-size:11px}
+.scope{margin:2px 0 8px}.scope label{display:inline-flex;align-items:center;gap:6px;color:var(--fg);cursor:pointer}.scope input{margin:0}
 .pill{display:inline-block;padding:0 5px;border-radius:2px;font-size:11px;background:var(--head);border:1px solid var(--line)}
 .live{background:var(--red);color:#fff;border-color:var(--red)}
 .st th.rh{background:var(--red-bg);color:var(--red)}.st th.bh{background:var(--blue-bg);color:var(--blue)}
