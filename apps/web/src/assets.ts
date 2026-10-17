@@ -65,7 +65,17 @@ html[data-stats=all] .os i:before{left:13px}
 .sbv{font:22px Georgia,serif;font-variant-numeric:tabular-nums;line-height:1.2}.sbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}.sbs{font-size:11px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 22px;align-items:start}
 .box h3{display:flex;align-items:baseline;gap:8px;margin:14px 0 4px;padding:3px 0;border-bottom:2px solid var(--rule);font-size:16px}
+.st td.wk{white-space:normal;min-width:0;overflow-wrap:anywhere}.st td.wk a{white-space:normal}
+.flag{display:inline-block;font-size:13px;line-height:1;margin-right:3px;vertical-align:-1px}
+a.mark{font-size:11px;margin-left:5px;text-decoration:none}
+.st td.wk a.mark{white-space:nowrap}
+a.mark.res{color:var(--win)}a.mark.vid{color:var(--red)}a.mark:hover{color:var(--fg)}
+.st td.when{white-space:nowrap;width:1%}
+.box a.clip{display:inline-block;max-width:16em;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;white-space:nowrap}
 .box .more{margin-left:auto;font:11px Verdana,sans-serif}
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:4px 0 8px;font-size:12px}
+.pager .off{color:var(--muted)}
+.pager select{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .box table.st{width:100%}
 .res{display:inline-block;min-width:16px;text-align:center;font-weight:bold;font-size:11px;border-radius:2px;padding:0 3px}
 .resW{color:var(--win);background:var(--win-bg)}.resL{color:var(--muted)}.resT{color:var(--fg);background:var(--head)}
@@ -112,7 +122,7 @@ form.shift{display:flex;flex-wrap:wrap;gap:3px;align-items:center}form.shift .go
 .ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
-@media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}}
+@media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}tr.mhide{display:none}}
 `.replace(/\n/g, "");
 
 /** Click-to-sort for every table.st. Numbers sort descending first (stats convention). */

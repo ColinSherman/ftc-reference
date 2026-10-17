@@ -1,5 +1,17 @@
 import { ALL_SEASONS, type Component, SEASONS, seasonLabel } from "@ftcref/seasons";
 import type { Child } from "hono/jsx";
+import { flagEmoji } from "../flags";
+
+/** Country flag. Hover shows the country name. Nothing when there is no flag. */
+export function Flag(props: { country?: string | null }) {
+  const emoji = flagEmoji(props.country);
+  if (!emoji) return null;
+  return (
+    <span class="flag" title={props.country ?? undefined}>
+      {emoji}
+    </span>
+  );
+}
 
 /**
  * Team avatar tile. Images are FIRST's 40×40 PNGs served from our own domain with immutable
@@ -36,11 +48,13 @@ export function TeamName(props: {
   num?: boolean;
   sub?: string | null;
   season?: number;
+  country?: string | null;
 }) {
   const href = props.season ? `/teams/${props.team}?season=${props.season}` : `/teams/${props.team}`;
   return (
     <>
       <Av team={props.team} k={props.av} />
+      <Flag country={props.country} />
       <a href={href} class="tn" title={props.name ?? undefined}>
         {props.num && <b class="num">{props.team}</b>} {props.name ?? (props.num ? "" : `Team ${props.team}`)}
       </a>
@@ -66,7 +80,7 @@ export function VidCell(props: { href: string; has: boolean | number }) {
 
 /** Compact "[avatar]number" links for a list of teams (match tables). */
 export function TeamLinks(props: {
-  teams: { team: number; av?: string | null }[];
+  teams: { team: number; av?: string | null; country?: string | null }[];
   season: number;
   hi?: Set<number>;
 }) {
@@ -75,6 +89,7 @@ export function TeamLinks(props: {
       {props.teams.map((t) => (
         <a class="tl" href={`/teams/${t.team}?season=${props.season}`}>
           <Av team={t.team} k={t.av} />
+          <Flag country={t.country} />
           {t.team}
         </a>
       ))}

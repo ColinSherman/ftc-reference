@@ -2,8 +2,10 @@ import { ALL_SEASONS, getSeason, isSeason, SEASONS, seasonKindIn, seasonLabel } 
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
+import { listWindow } from "../paging";
 import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
+import { Pager } from "../views/pager";
 import {
   Box,
   eventStatus,
@@ -36,65 +38,63 @@ homeRoutes.get("/", (c) =>
         .bind(SEASON),
       d
         .prepare(
-          `SELECT e.code, e.name, e.city, e.state_prov, e.country, e.date_start, e.date_end,
-                  (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played
+          `SELECT e.code, e.name, e.city, e.state_prov, e.country, e.date_start, e.date_end, e.live_stream_url,
+                  (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played,
+                  (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams,
+                  (SELECT COUNT(DISTINCT v.match_id) FROM videos v JOIN matches mv ON mv.id = v.match_id
+                    WHERE mv.season = e.season AND mv.event_code = e.code AND v.status = 'approved') AS videos,
+                  (SELECT COUNT(*) FROM event_streams es WHERE es.season = e.season AND es.event_code = e.code) AS streams,
+                  CASE WHEN e.webcasts_json IS NOT NULL AND e.webcasts_json NOT IN ('', '[]') THEN 1 ELSE 0 END AS webcast
            FROM events e
            WHERE e.season = ? AND substr(e.date_end, 1, 10) >= date(?, '-3 days') AND substr(e.date_start, 1, 10) <= date(?, '+7 days')
-             AND (e.kind IS NULL OR e.kind NOT IN ('Kickoff','Workshop','DemoExhibition','VolunteerSignup','PracticeDay'))
-           ORDER BY e.date_start, e.name LIMIT 40`,
+             AND (e.kind IS NULL OR e.kind NOT IN ('Kickoff','Workshop','DemoExhibition','VolunteerSignup','PracticeDay'))`,
         )
         .bind(SEASON, today, today),
       d
         .prepare(
-          `SELECT s.team, t.name_short, av.key AS av, s.best_opr_np, s.best_event, s.wins, s.losses, s.ties
+          `SELECT s.team, t.name_short, t.country, av.key AS av, s.best_opr_np, s.best_event, s.wins, s.losses, s.ties
            FROM ${table} s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
-           WHERE s.season = ? AND s.best_opr_np IS NOT NULL ORDER BY s.best_opr_np DESC LIMIT 15`,
+           WHERE s.season = ? AND s.best_opr_np IS NOT NULL ORDER BY s.best_opr_np DESC LIMIT ${HOME_STAT}`,
         )
         .bind(SEASON),
       d
         .prepare(
-          `SELECT s.team, t.name_short, av.key AS av, s.best_opr_auto, s.best_opr_c1
+          `SELECT s.team, t.name_short, t.country, av.key AS av, s.best_opr_auto, s.best_opr_c1
            FROM ${table} s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
-           WHERE s.season = ? AND s.best_opr_auto IS NOT NULL ORDER BY s.best_opr_auto DESC LIMIT 10`,
+           WHERE s.season = ? AND s.best_opr_auto IS NOT NULL ORDER BY s.best_opr_auto DESC LIMIT ${HOME_STAT}`,
         )
         .bind(SEASON),
       d
         .prepare(
           `SELECT m.event_code, m.level, m.series, m.match_number, s.alliance, s.np,
-                  (SELECT group_concat(x.team || ':' || COALESCE(xa.key, ''), ' ') FROM match_teams x
+                  (SELECT group_concat(x.team || ':' || COALESCE(xa.key, '') || ':' || COALESCE(tm.country, ''), char(31))
+                   FROM match_teams x
                    LEFT JOIN team_avatars xa ON xa.team = x.team
+                   LEFT JOIN teams tm ON tm.number = x.team
                    WHERE x.match_id = m.id AND x.alliance = s.alliance) AS teams,
                   EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video
            FROM match_scores s JOIN matches m ON m.id = s.match_id
            JOIN events e ON e.season = m.season AND e.code = m.event_code
-           WHERE s.season = ? ${counted} ORDER BY s.np DESC LIMIT 10`,
+           WHERE s.season = ? ${counted} ORDER BY s.np DESC LIMIT ${HOME_STAT}`,
         )
         .bind(SEASON),
       d
         .prepare(
-          `SELECT a.team, a.event_code, e.name AS event_name, t.name_short, av.key AS av FROM awards a
+          `SELECT a.team, a.event_code, e.name AS event_name, t.name_short, t.country, av.key AS av FROM awards a
            JOIN events e ON e.season = a.season AND e.code = a.event_code
            LEFT JOIN teams t ON t.number = a.team LEFT JOIN team_avatars av ON av.team = a.team
            WHERE a.season = ? AND a.name LIKE 'Inspire%' AND a.series <= 1 AND a.team > 0 ${counted}
-           ORDER BY e.date_end DESC LIMIT 10`,
+           ORDER BY e.date_end DESC LIMIT ${HOME_STAT}`,
         )
         .bind(SEASON),
     ]);
     const counts = countsR?.results[0] as { events: number; teams: number; matches: number };
-    type Ev = {
-      code: string;
-      name: string;
-      city: string | null;
-      state_prov: string | null;
-      country: string | null;
-      date_start: string;
-      date_end: string;
-      played: number;
-    };
-    const events = (evR?.results ?? []) as Ev[];
+    const events = ((evR?.results ?? []) as WeekEvent[]).sort((a, b) => compareWeek(a, b, today));
+    const preview = events.slice(0, HOME_WEEK);
     const top = (topR?.results ?? []) as {
       team: number;
       name_short: string | null;
+      country: string | null;
       av: string | null;
       best_opr_np: number;
       best_event: string;
@@ -105,6 +105,7 @@ homeRoutes.get("/", (c) =>
     const auto = (autoR?.results ?? []) as {
       team: number;
       name_short: string | null;
+      country: string | null;
       av: string | null;
       best_opr_auto: number;
       best_opr_c1: number | null;
@@ -124,6 +125,7 @@ homeRoutes.get("/", (c) =>
       event_code: string;
       event_name: string;
       name_short: string | null;
+      country: string | null;
       av: string | null;
     }[];
     const fmt = (x: number) => x.toLocaleString("en-US");
@@ -149,27 +151,7 @@ homeRoutes.get("/", (c) =>
             ) : (
               <Table>
                 <tbody>
-                  {events.map((e) => {
-                    const s = eventStatus(e.date_start, e.date_end, today);
-                    return (
-                      <tr>
-                        <td class="l" data-v={e.date_start}>
-                          {s === "live" ? (
-                            <StatusPill s={s} />
-                          ) : (
-                            <span class="note">{shortDate(e.date_start)}</span>
-                          )}
-                        </td>
-                        <td class="l">
-                          <a href={`/events/${SEASON}/${e.code}`}>{e.name}</a>
-                          <div class="note">
-                            {[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}
-                          </div>
-                        </td>
-                        <td title="Matches played">{e.played || ""}</td>
-                      </tr>
-                    );
-                  })}
+                  {preview.map((e, i) => weekRow(e, today, i >= HOME_WEEK_MOBILE ? "mhide" : undefined))}
                 </tbody>
               </Table>
             )}
@@ -190,10 +172,15 @@ homeRoutes.get("/", (c) =>
                 </thead>
                 <tbody>
                   {top.map((t, i) => (
-                    <tr>
+                    <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                       <td>{i + 1}</td>
                       <td class="l">
-                        <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} />
+                        <TeamName
+                          team={t.team}
+                          name={`${t.team} ${t.name_short ?? ""}`}
+                          av={t.av}
+                          country={t.country}
+                        />
                       </td>
                       <td class="w">{f1(t.best_opr_np)}</td>
                       <td data-v={t.wins}>{wlt(t.wins, t.losses, t.ties)}</td>
@@ -218,14 +205,17 @@ homeRoutes.get("/", (c) =>
                   </tr>
                 </thead>
                 <tbody>
-                  {high.map((h) => {
+                  {high.map((h, i) => {
                     const href = `/events/${SEASON}/${h.event_code}/${matchSlug(h.level, h.series, h.match_number)}`;
-                    const teams = (h.teams ?? "").split(" ").map((x) => {
-                      const [team, av] = x.split(":");
-                      return { team: Number(team), av: av || null };
-                    });
+                    const teams = (h.teams ?? "")
+                      .split("\u001f")
+                      .filter(Boolean)
+                      .map((x) => {
+                        const [team, av, country] = x.split(":");
+                        return { team: Number(team), av: av || null, country: country || null };
+                      });
                     return (
-                      <tr>
+                      <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                         <VidCell href={href} has={h.has_video} />
                         <td class="w">{h.np}</td>
                         <td class={`l ${h.alliance === "R" ? "r" : "b"}`}>
@@ -259,10 +249,15 @@ homeRoutes.get("/", (c) =>
                 </thead>
                 <tbody>
                   {auto.map((t, i) => (
-                    <tr>
+                    <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                       <td>{i + 1}</td>
                       <td class="l">
-                        <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} />
+                        <TeamName
+                          team={t.team}
+                          name={`${t.team} ${t.name_short ?? ""}`}
+                          av={t.av}
+                          country={t.country}
+                        />
                       </td>
                       <td class="w">{f1(t.best_opr_auto)}</td>
                       <td>{(c1.count ? f2 : f1)(t.best_opr_c1)}</td>
@@ -279,13 +274,20 @@ homeRoutes.get("/", (c) =>
             ) : (
               <Table>
                 <tbody>
-                  {inspire.map((a) => (
-                    <tr>
+                  {inspire.map((a, i) => (
+                    <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                       <td class="l">
-                        <TeamName team={a.team} name={`${a.team} ${a.name_short ?? ""}`} av={a.av} />
+                        <TeamName
+                          team={a.team}
+                          name={`${a.team} ${a.name_short ?? ""}`}
+                          av={a.av}
+                          country={a.country}
+                        />
                       </td>
                       <td class="l">
-                        <a href={`/events/${SEASON}/${a.event_code}`}>{a.event_name}</a>
+                        <a class="clip" href={`/events/${SEASON}/${a.event_code}`}>
+                          {a.event_name}
+                        </a>
                       </td>
                     </tr>
                   ))}
@@ -436,15 +438,47 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     };
     const sortKey = c.req.query("sort") ?? "np";
     const [col, colLabel] = sorts[sortKey] ?? (sorts.np as [string, string]);
-    const { results } = await db(c)
-      .prepare(
-        `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM ${table} s
-         LEFT JOIN teams t ON t.number = s.team
-         LEFT JOIN team_avatars av ON av.team = s.team
-         WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT 1000`,
-      )
-      .bind(season)
-      .all<Record<string, number | string | null> & { team: number; av: string | null }>();
+    const { size, page: requested } = listWindow(c);
+    const d = db(c);
+    const [countR, listR] = await d.batch([
+      d
+        .prepare(`SELECT COUNT(*) AS n FROM ${table} s WHERE s.season = ? AND s.${col} IS NOT NULL`)
+        .bind(season),
+      d
+        .prepare(
+          `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM ${table} s
+           LEFT JOIN teams t ON t.number = s.team
+           LEFT JOIN team_avatars av ON av.team = s.team
+           WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT ? OFFSET ?`,
+        )
+        .bind(season, size, (requested - 1) * size),
+    ]);
+    const total = Number((countR?.results[0] as { n: number } | undefined)?.n ?? 0);
+    const pages = Math.max(1, Math.ceil(total / size));
+    const page = Math.min(requested, pages);
+    let results = (listR?.results ?? []) as (Record<string, number | string | null> & {
+      team: number;
+      av: string | null;
+    })[];
+    if (results.length === 0 && total > 0 && page !== requested) {
+      const again = await d
+        .prepare(
+          `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM ${table} s
+           LEFT JOIN teams t ON t.number = s.team
+           LEFT JOIN team_avatars av ON av.team = s.team
+           WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT ? OFFSET ?`,
+        )
+        .bind(season, size, (page - 1) * size)
+        .all<Record<string, number | string | null> & { team: number; av: string | null }>();
+      results = again.results ?? [];
+    }
+    const href = (p: number) => {
+      const q = new URLSearchParams();
+      if (sortKey !== "np") q.set("sort", sortKey);
+      if (p > 1) q.set("page", String(p));
+      const s = q.toString();
+      return `/seasons/${season}/leaders${s ? `?${s}` : ""}`;
+    };
     const n = (v: unknown) => v as number | null;
     const cols: { k: string; head: unknown; fmt: (x: number | null) => string | number }[] = [
       { k: "best_opr_np", head: <Th k="Best NP" />, fmt: f1 },
@@ -486,48 +520,66 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
           </button>
         </form>
         <p class="note">
-          {`Best = best single-event OPR${mode === "official" ? ". Off-season events are excluded" : ", including off-season"}. Top 1,000 by ${colLabel.toLowerCase()} shown; click headers to re-sort.`}
+          {`Best = best single-event OPR${mode === "official" ? ". Off-season events are excluded" : ", including off-season"}. Click headers to re-sort this page.`}
         </p>
         {results.length === 0 ? (
           <p class="note">
             No stats for this season yet{season !== SEASON ? " — it may still be loading." : "."}
           </p>
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th class="l">Team</th>
-                <Th k="Ev" />
-                <Th k="W-L-T" />
-                {cols.map((cl) => cl.head)}
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r, i) => (
+          <>
+            <Pager
+              page={page}
+              pages={pages}
+              total={total}
+              start={(page - 1) * size}
+              size={size}
+              href={href}
+            />
+            <Table>
+              <thead>
                 <tr>
-                  <td>{i + 1}</td>
-                  <td class="l" data-v={r.team}>
-                    <TeamName
-                      team={r.team}
-                      name={r.name_short as string | null}
-                      av={r.av}
-                      num
-                      season={season}
-                      sub={[r.state_prov, r.country].filter(Boolean).join(", ")}
-                    />
-                  </td>
-                  <td>{r.events_played}</td>
-                  <td data-v={r.wins}>{wlt(n(r.wins) ?? 0, n(r.losses) ?? 0, n(r.ties) ?? 0)}</td>
-                  {cols.map((cl) => (
-                    <td class={`ht${cl.k === col ? " w" : ""}`} style={H[cl.k]?.(n(r[cl.k]))}>
-                      {cl.fmt(n(r[cl.k]))}
-                    </td>
-                  ))}
+                  <th>#</th>
+                  <th class="l">Team</th>
+                  <Th k="Ev" />
+                  <Th k="W-L-T" />
+                  {cols.map((cl) => cl.head)}
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {results.map((r, i) => (
+                  <tr>
+                    <td>{(page - 1) * size + i + 1}</td>
+                    <td class="l" data-v={r.team}>
+                      <TeamName
+                        team={r.team}
+                        name={r.name_short as string | null}
+                        av={r.av}
+                        num
+                        season={season}
+                        sub={[r.state_prov, r.country].filter(Boolean).join(", ")}
+                      />
+                    </td>
+                    <td>{r.events_played}</td>
+                    <td data-v={r.wins}>{wlt(n(r.wins) ?? 0, n(r.losses) ?? 0, n(r.ties) ?? 0)}</td>
+                    {cols.map((cl) => (
+                      <td class={`ht${cl.k === col ? " w" : ""}`} style={H[cl.k]?.(n(r[cl.k]))}>
+                        {cl.fmt(n(r[cl.k]))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <Pager
+              page={page}
+              pages={pages}
+              total={total}
+              start={(page - 1) * size}
+              size={size}
+              href={href}
+            />
+          </>
         )}
       </Layout>,
     );
@@ -627,6 +679,102 @@ homeRoutes.get("/search", async (c) => {
     </Layout>,
   );
 });
+
+/** Two-line event rows. Stat lists are one line, so they show more to land at a similar height. */
+const HOME_WEEK = 11;
+const HOME_WEEK_MOBILE = 7;
+const HOME_STAT = 15;
+const HOME_STAT_MOBILE = 9;
+
+type WeekEvent = {
+  code: string;
+  name: string;
+  city: string | null;
+  state_prov: string | null;
+  country: string | null;
+  date_start: string;
+  date_end: string;
+  played: number;
+  teams: number;
+  videos: number;
+  streams: number;
+  live_stream_url: string | null;
+  webcast: number;
+};
+
+/**
+ * Live events first. Within live and within the rest, scored events come before
+ * ones that only have a team list, and those come before empty listings.
+ * Upcoming events with data stay ahead of events that already ended.
+ */
+function compareWeek(a: WeekEvent, b: WeekEvent, today: string): number {
+  const rank = (e: WeekEvent) => {
+    const status = eventStatus(e.date_start, e.date_end, today);
+    const live = status === "live" ? 0 : 1;
+    const data = e.played > 0 ? 0 : e.teams > 0 ? 1 : 2;
+    const ended = status === "final" ? 1 : 0;
+    return live * 6 + data * 2 + (live === 0 ? 0 : ended);
+  };
+  const d = rank(a) - rank(b);
+  if (d) return d;
+  if (rank(a) < 6 && a.played !== b.played) return b.played - a.played;
+  if (a.date_start !== b.date_start) return a.date_start < b.date_start ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+/** Livestream link, an uploaded stream, or match video. Hover text says which. */
+function mediaMark(e: WeekEvent): { href: string; title: string; external: boolean } | null {
+  const bits: string[] = [];
+  if (e.live_stream_url || e.webcast) bits.push("Livestream");
+  if (e.streams > 0)
+    bits.push(e.streams === 1 ? "1 livestream recording" : `${e.streams} livestream recordings`);
+  if (e.videos > 0) bits.push(e.videos === 1 ? "1 match video" : `${e.videos} match videos`);
+  if (!bits.length) return null;
+  return {
+    href: e.live_stream_url || `/events/${SEASON}/${e.code}#matches`,
+    title: bits.join(" · "),
+    external: !!e.live_stream_url,
+  };
+}
+
+function weekRow(e: WeekEvent, today: string, cls?: string) {
+  const s = eventStatus(e.date_start, e.date_end, today);
+  const place = [e.city, e.state_prov, e.country].filter(Boolean).join(", ");
+  const extra = e.played > 0 ? "" : e.teams > 0 ? `${e.teams} teams` : "";
+  const sub = [place, extra].filter(Boolean).join(" · ");
+  const media = mediaMark(e);
+  const eventHref = `/events/${SEASON}/${e.code}`;
+  return (
+    <tr class={cls}>
+      <td class="l when" data-v={e.date_start}>
+        {s === "live" ? <StatusPill s={s} /> : <span class="note">{shortDate(e.date_start)}</span>}
+      </td>
+      <td class="l wk">
+        <a href={eventHref}>{e.name}</a>
+        {e.played > 0 && (
+          <a
+            class="mark res"
+            href={eventHref}
+            title={`${e.played} match${e.played === 1 ? "" : "es"} with results`}
+          >
+            ●
+          </a>
+        )}
+        {media && (
+          <a
+            class="mark vid"
+            href={media.href}
+            title={media.title}
+            {...(media.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+          >
+            ▶
+          </a>
+        )}
+        {sub && <div class="sub">{sub}</div>}
+      </td>
+    </tr>
+  );
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "2026-10-17…" → "Sat Oct 17" (dates are event-local, so no timezone math). */
