@@ -410,7 +410,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     const [col, colLabel] = sorts[sortKey] ?? (sorts.np as [string, string]);
     const { results } = await db(c)
       .prepare(
-        `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM team_season_stats s
+        `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM team_season_stats s
          LEFT JOIN teams t ON t.number = s.team
          LEFT JOIN team_avatars av ON av.team = s.team
          WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT 1000`,
@@ -486,6 +486,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
                       av={r.av}
                       num
                       season={season}
+                      loc={r as never}
                       sub={[r.state_prov, r.country].filter(Boolean).join(", ")}
                     />
                   </td>
@@ -569,6 +570,7 @@ homeRoutes.get("/search", async (c) => {
                       name={t.name_short}
                       av={t.av}
                       num
+                      loc={t}
                       sub={[t.city, t.state_prov, t.country].filter(Boolean).join(", ")}
                     />
                   </td>

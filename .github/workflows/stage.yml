@@ -23,6 +23,12 @@ jobs:
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm lint
+      # Staging reads the production D1, so new migrations have to land there before staging code
+      # queries the new tables. Keep migrations additive: production code runs against the same schema.
+      - run: pnpm db:migrate:remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: a92ff6c4b72094e5030585f2363b940a
       - run: pnpm deploy:stage
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
