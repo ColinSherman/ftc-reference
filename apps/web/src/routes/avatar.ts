@@ -23,7 +23,8 @@ avatarRoutes.get("/:file{[0-9]+-[0-9a-f-]{8,64}.png}", async (c) => {
   const bytes = row.png instanceof ArrayBuffer ? new Uint8Array(row.png) : Uint8Array.from(row.png);
   const res = new Response(bytes, {
     headers: {
-      "Content-Type": "image/png",
+      // FIRST avatars are PNG; Instagram fallbacks (scripts/instagram-avatars.mjs) are JPEG.
+      "Content-Type": bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : "image/png",
       "Cache-Control": "public, max-age=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
     },

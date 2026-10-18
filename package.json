@@ -12,7 +12,8 @@
     "dev:sync": "pnpm --filter @ftcref/sync dev",
     "dev:web": "pnpm --filter @ftcref/web dev",
     "deploy": "pnpm --filter @ftcref/sync deploy && pnpm --filter @ftcref/web deploy",
-    "deploy:stage": "pnpm --filter @ftcref/web deploy:stage"
+    "deploy:stage": "pnpm --filter @ftcref/web deploy:stage",
+    "avatars:instagram": "node scripts/instagram-avatars.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
