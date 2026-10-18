@@ -79,6 +79,15 @@ curl "localhost:8787/__scheduled?cron=*+*+*+*+*"     # run the per-minute planne
 6. Run `pnpm deploy`, then start the backfill: `POST /admin/backfill`, followed by `POST /admin/backfill?step=matches`.
 7. Attach a custom domain to `ftcref-web`. `caches.default` doesn't run on `*.workers.dev`, so pages aren't edge-cached until you do.
 
+## Production deploys
+
+Merging to `main` deploys production. The `.github/workflows/deploy.yml` workflow runs tests, typecheck
+and lint, applies D1 migrations (`pnpm db:migrate:remote`), then runs `pnpm deploy` (sync, then web).
+Deploys run one at a time and are never cancelled partway. It can also be run by hand from the Actions tab
+("Deploy production"). It uses the same `CLOUDFLARE_API_TOKEN` repo secret as staging, which also needs
+Queues:Edit for the sync Worker. If a check fails, nothing is deployed; if the web deploy fails after sync
+went out, re-run the workflow.
+
 ## Staging (stage.ftc-reference.com)
 
 `pnpm deploy:stage` deploys the web app as a separate Worker (`ftcref-web-stage`) on
