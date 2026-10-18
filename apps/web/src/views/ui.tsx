@@ -1,22 +1,6 @@
 import { ALL_SEASONS, type Component, SEASONS, seasonLabel } from "@ftcref/seasons";
 import type { Child } from "hono/jsx";
-import { flagCode } from "../flags";
-
-/** Colored flag picture. Hover shows the country name. Nothing when there is no flag. */
-export function Flag(props: { country?: string | null }) {
-  const code = flagCode(props.country);
-  if (!code) return null;
-  return (
-    <img
-      class="flag"
-      src={`/flags/${code}.svg`}
-      width={16}
-      height={12}
-      alt=""
-      title={props.country ?? undefined}
-    />
-  );
-}
+import { flagCode, placeTitle } from "../flags";
 
 /**
  * Team avatar tile. Images are FIRST's 40×40 PNGs served from our own domain with immutable
@@ -40,7 +24,24 @@ export function Av(props: { team: number; k?: string | null; size?: "sm" | "xl" 
   );
 }
 
-/** "[avatar] Name" cell content linking to the team page. */
+/** Country flag (flagcdn PNG, 2× via srcset); `title` is the hover text (location + region). Renders nothing if unknown. */
+export function Flag(props: { code: string | null; title?: string }) {
+  if (!props.code) return null;
+  return (
+    <img
+      class="flag"
+      src={`https://flagcdn.com/w20/${props.code}.png`}
+      srcset={`https://flagcdn.com/w40/${props.code}.png 2x`}
+      width={20}
+      height={15}
+      loading="lazy"
+      decoding="async"
+      alt={props.code.toUpperCase()}
+      title={props.title}
+    />
+  );
+}
+
 /**
  * "[avatar] Name" cell content linking to the team page. `num` prefixes the team number (so tables
  * don't need a separate number column); `sub` adds a small second line (location, etc.); `season`
@@ -53,13 +54,21 @@ export function TeamName(props: {
   num?: boolean;
   sub?: string | null;
   season?: number;
-  country?: string | null;
+  /** Team location; renders a country flag whose hover shows place + region. */
+  loc?: {
+    city?: string | null;
+    state_prov?: string | null;
+    country?: string | null;
+    home_region?: string | null;
+  };
 }) {
   const href = props.season ? `/teams/${props.team}?season=${props.season}` : `/teams/${props.team}`;
   return (
     <>
       <Av team={props.team} k={props.av} />
-      <Flag country={props.country} />
+      {props.loc && (
+        <Flag code={flagCode(props.loc.country, props.loc.home_region)} title={placeTitle(props.loc)} />
+      )}
       <a href={href} class="tn" title={props.name ?? undefined}>
         {props.num && <b class="num">{props.team}</b>} {props.name ?? (props.num ? "" : `Team ${props.team}`)}
       </a>
@@ -85,7 +94,7 @@ export function VidCell(props: { href: string; has: boolean | number }) {
 
 /** Compact "[avatar]number" links for a list of teams (match tables). */
 export function TeamLinks(props: {
-  teams: { team: number; av?: string | null; country?: string | null }[];
+  teams: { team: number; av?: string | null }[];
   season: number;
   hi?: Set<number>;
 }) {
@@ -94,7 +103,6 @@ export function TeamLinks(props: {
       {props.teams.map((t) => (
         <a class="tl" href={`/teams/${t.team}?season=${props.season}`}>
           <Av team={t.team} k={t.av} />
-          <Flag country={t.country} />
           {t.team}
         </a>
       ))}

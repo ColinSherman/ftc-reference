@@ -57,6 +57,10 @@ html[data-stats=all] .os i:before{left:13px}
 .ht{background:rgb(var(--heat) / calc(var(--h,0) * var(--heat-a)))}
 .av{display:inline-block;width:20px;height:20px;border-radius:3px;background:var(--tile);box-shadow:0 0 0 1px var(--line);vertical-align:-5px;margin-right:6px;object-fit:contain}
 .av0{background:var(--head)}
+.flag{display:inline-block;width:20px;height:15px;vertical-align:-2px;margin-right:6px;border-radius:2px;box-shadow:0 0 0 1px var(--line);object-fit:cover}
+.photos{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 10px}.photos figure{margin:0;width:200px}.photos img{display:block;width:200px;height:150px;object-fit:cover;border-radius:6px;background:var(--tile);box-shadow:0 0 0 1px var(--line)}.photos figure.ig{width:326px}.photos iframe{display:block;width:326px;height:440px;max-width:100%;border:0;border-radius:6px;background:var(--tile)}.photos figcaption{font-size:12px;color:var(--muted);margin-top:2px}
+.hero{width:160px;height:120px;object-fit:cover;border-radius:6px;box-shadow:0 0 0 1px var(--line);background:var(--tile)}
+.psub summary{cursor:pointer;color:var(--link)}.psub form{margin:6px 0;max-width:520px}
 .av.xl{width:80px;height:80px;border-radius:6px;margin:0;image-rendering:pixelated;vertical-align:top}
 .card{display:flex;gap:18px;align-items:flex-start;margin:6px 0 4px;flex-wrap:wrap}.card h1{margin-top:0}
 .card .who{flex:1;min-width:260px}
@@ -66,7 +70,6 @@ html[data-stats=all] .os i:before{left:13px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 22px;align-items:start}
 .box h3{display:flex;align-items:baseline;gap:8px;margin:14px 0 4px;padding:3px 0;border-bottom:2px solid var(--rule);font-size:16px}
 .st td.wk{white-space:normal;min-width:0;overflow-wrap:anywhere}.st td.wk a{white-space:normal}
-.flag{display:inline-block;width:16px;height:12px;object-fit:cover;margin-right:4px;vertical-align:-2px;border-radius:1px;box-shadow:0 0 0 1px var(--line)}
 a.mark{font-size:11px;margin-left:5px;text-decoration:none}
 .st td.wk a.mark{white-space:nowrap}
 a.mark.res{color:var(--win)}a.mark.vid{color:var(--red)}a.mark:hover{color:var(--fg)}

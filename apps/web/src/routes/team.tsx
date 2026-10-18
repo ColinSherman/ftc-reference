@@ -2,6 +2,8 @@ import { getSeason, isSeason, SEASON_KINDS, seasonKindIn, seasonLabel } from "@f
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
+import { flagCode, placeTitle } from "../flags";
+import { imgurUrl, instagramEmbed, instagramUrl } from "../media";
 import { regionName } from "../regions";
 import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
@@ -63,7 +65,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     const table = seasonStatsTable(mode);
     const awardKind = mode === "official" ? `AND ${seasonKindIn("ae")}` : "";
     const d = db(c);
-    const [teamR, careerR] = await d.batch([
+    const [teamR, careerR, mediaR] = await d.batch([
       d
         .prepare(
           "SELECT t.*, av.key AS av FROM teams t LEFT JOIN team_avatars av ON av.team = t.number WHERE t.number = ?",
@@ -87,7 +89,19 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
            ORDER BY y.year DESC`,
         )
         .bind(n),
+      d
+        .prepare(
+          "SELECT kind, ref, season, caption FROM team_media WHERE team = ? AND status = 'approved' ORDER BY preferred DESC, season DESC, id DESC LIMIT 24",
+        )
+        .bind(n),
     ]);
+    const photos = (mediaR?.results ?? []) as {
+      kind: string;
+      ref: string;
+      season: number;
+      caption: string | null;
+    }[];
+    const hero = photos.find((p) => p.kind === "imgur");
     const team = teamR?.results[0] as
       | (Record<string, string | number | null> & { av: string | null })
       | undefined;
@@ -150,6 +164,13 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     ).filter((a) => mode === "all" || (a.kind != null && COUNTED.has(a.kind)));
     const ss = career.find((r) => r.season === season);
     const location = [team.city, team.state_prov, team.country].filter(Boolean).join(", ");
+    const flag = flagCode(team.country as string | null, team.home_region as string | null);
+    const hover = placeTitle({
+      city: team.city as string | null,
+      state_prov: team.state_prov as string | null,
+      country: team.country as string | null,
+      home_region: team.home_region as string | null,
+    });
 
     const byEvent = new Map<string, LogRow[]>();
     for (const m of log) byEvent.set(m.event_code, [...(byEvent.get(m.event_code) ?? []), m]);
@@ -166,15 +187,25 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         </div>
         <div class="card">
           <Av team={n} k={team.av} size="xl" />
+          {hero && (
+            <a href={imgurUrl(hero.ref)} title="Robot photo">
+              <img
+                class="hero"
+                src={imgurUrl(hero.ref, "m")}
+                width={160}
+                height={120}
+                alt={`Team ${n} robot`}
+              />
+            </a>
+          )}
           <div class="who">
             <h1>
               {n} <span style="color:var(--muted)">·</span> {team.name_short}
             </h1>
             <div class="bio">
               {location && (
-                <div>
-                  <b>Location:</b> <Flag country={team.country == null ? null : String(team.country)} />{" "}
-                  {location}
+                <div title={hover}>
+                  <b>Location:</b> <Flag code={flag} title={hover} /> {location}
                 </div>
               )}
               {team.home_region && (
@@ -311,6 +342,89 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         ) : (
           <p class="note">No match results for this season{ts ? " (registered)" : ""}.</p>
         )}
+
+        <h3 id="photos">Robot photos</h3>
+        {photos.length > 0 ? (
+          <div class="photos">
+            {photos.map((p) => (
+              <figure class={p.kind === "instagram" ? "ig" : undefined}>
+                {p.kind === "instagram" ? (
+                  <iframe
+                    src={instagramEmbed(p.ref)}
+                    title={`Team ${n} robot on Instagram, ${p.season}`}
+                    width={326}
+                    height={440}
+                    loading="lazy"
+                    scrolling="no"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                  />
+                ) : (
+                  <a href={imgurUrl(p.ref)}>
+                    <img
+                      src={imgurUrl(p.ref, "m")}
+                      width={200}
+                      height={150}
+                      loading="lazy"
+                      alt={`Team ${n} robot, ${p.season}`}
+                    />
+                  </a>
+                )}
+                <figcaption>
+                  {seasonLabel(p.season)}
+                  {p.caption ? ` · ${p.caption}` : ""}
+                  {p.kind === "instagram" && (
+                    <>
+                      {" · "}
+                      <a href={instagramUrl(p.ref)}>Instagram</a>
+                    </>
+                  )}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : (
+          <p class="note">No robot photos yet.</p>
+        )}
+        <details class="psub">
+          <summary>Submit a robot photo</summary>
+          <form
+            method="post"
+            action={`/teams/${n}/photos`}
+            class="filters"
+            style="flex-direction:column;align-items:stretch"
+          >
+            <label>
+              Imgur image link (not an album) or Instagram post link
+              <input
+                name="url"
+                required
+                placeholder="https://imgur.com/AbC123x or https://instagram.com/p/…"
+                style="width:100%"
+              />
+            </label>
+            <label>
+              Season
+              <select name="season">
+                {career.map((r) => (
+                  <option value={r.season} selected={r.season === season}>
+                    {seasonLabel(r.season)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Caption (optional)
+              <input name="caption" maxlength={120} style="width:100%" />
+            </label>
+            <label>
+              Your name or team (optional)
+              <input name="by" maxlength={60} style="width:100%" />
+            </label>
+            <button type="submit" class="go">
+              Submit for review
+            </button>
+          </form>
+        </details>
 
         {events.length > 0 && (
           <>

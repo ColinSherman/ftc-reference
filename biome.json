@@ -1,14 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
-  "files": {
-    "includes": [
-      "**",
-      "!**/node_modules",
-      "!**/.wrangler",
-      "!**/worker-configuration.d.ts",
-      "!apps/web/public"
-    ]
-  },
+  "files": { "includes": ["**", "!**/node_modules", "!**/.wrangler", "!**/worker-configuration.d.ts"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
   "linter": { "enabled": true, "rules": { "recommended": true } }
 }

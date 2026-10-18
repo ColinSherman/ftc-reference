@@ -52,14 +52,14 @@ homeRoutes.get("/", (c) =>
         .bind(SEASON, today, today),
       d
         .prepare(
-          `SELECT s.team, t.name_short, t.country, av.key AS av, s.best_opr_np, s.best_event, s.wins, s.losses, s.ties
+          `SELECT s.team, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av, s.best_opr_np, s.best_event, s.wins, s.losses, s.ties
            FROM ${table} s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.best_opr_np IS NOT NULL ORDER BY s.best_opr_np DESC LIMIT ${HOME_STAT}`,
         )
         .bind(SEASON),
       d
         .prepare(
-          `SELECT s.team, t.name_short, t.country, av.key AS av, s.best_opr_auto, s.best_opr_c1
+          `SELECT s.team, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av, s.best_opr_auto, s.best_opr_c1
            FROM ${table} s LEFT JOIN teams t ON t.number = s.team LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.best_opr_auto IS NOT NULL ORDER BY s.best_opr_auto DESC LIMIT ${HOME_STAT}`,
         )
@@ -67,10 +67,9 @@ homeRoutes.get("/", (c) =>
       d
         .prepare(
           `SELECT m.event_code, m.level, m.series, m.match_number, s.alliance, s.np,
-                  (SELECT group_concat(x.team || ':' || COALESCE(xa.key, '') || ':' || COALESCE(tm.country, ''), char(31))
+                  (SELECT group_concat(x.team || ':' || COALESCE(xa.key, ''), char(31))
                    FROM match_teams x
                    LEFT JOIN team_avatars xa ON xa.team = x.team
-                   LEFT JOIN teams tm ON tm.number = x.team
                    WHERE x.match_id = m.id AND x.alliance = s.alliance) AS teams,
                   EXISTS (SELECT 1 FROM videos v WHERE v.match_id = m.id AND v.status = 'approved') AS has_video
            FROM match_scores s JOIN matches m ON m.id = s.match_id
@@ -80,7 +79,7 @@ homeRoutes.get("/", (c) =>
         .bind(SEASON),
       d
         .prepare(
-          `SELECT a.team, a.event_code, e.name AS event_name, t.name_short, t.country, av.key AS av FROM awards a
+          `SELECT a.team, a.event_code, e.name AS event_name, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM awards a
            JOIN events e ON e.season = a.season AND e.code = a.event_code
            LEFT JOIN teams t ON t.number = a.team LEFT JOIN team_avatars av ON av.team = a.team
            WHERE a.season = ? AND a.name LIKE 'Inspire%' AND a.series <= 1 AND a.team > 0 ${counted}
@@ -94,7 +93,10 @@ homeRoutes.get("/", (c) =>
     const top = (topR?.results ?? []) as {
       team: number;
       name_short: string | null;
+      city: string | null;
+      state_prov: string | null;
       country: string | null;
+      home_region: string | null;
       av: string | null;
       best_opr_np: number;
       best_event: string;
@@ -105,7 +107,10 @@ homeRoutes.get("/", (c) =>
     const auto = (autoR?.results ?? []) as {
       team: number;
       name_short: string | null;
+      city: string | null;
+      state_prov: string | null;
       country: string | null;
+      home_region: string | null;
       av: string | null;
       best_opr_auto: number;
       best_opr_c1: number | null;
@@ -125,7 +130,10 @@ homeRoutes.get("/", (c) =>
       event_code: string;
       event_name: string;
       name_short: string | null;
+      city: string | null;
+      state_prov: string | null;
       country: string | null;
+      home_region: string | null;
       av: string | null;
     }[];
     const fmt = (x: number) => x.toLocaleString("en-US");
@@ -175,12 +183,7 @@ homeRoutes.get("/", (c) =>
                     <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                       <td>{i + 1}</td>
                       <td class="l">
-                        <TeamName
-                          team={t.team}
-                          name={`${t.team} ${t.name_short ?? ""}`}
-                          av={t.av}
-                          country={t.country}
-                        />
+                        <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} loc={t} />
                       </td>
                       <td class="w">{f1(t.best_opr_np)}</td>
                       <td data-v={t.wins}>{wlt(t.wins, t.losses, t.ties)}</td>
@@ -211,8 +214,8 @@ homeRoutes.get("/", (c) =>
                       .split("\u001f")
                       .filter(Boolean)
                       .map((x) => {
-                        const [team, av, country] = x.split(":");
-                        return { team: Number(team), av: av || null, country: country || null };
+                        const [team, av] = x.split(":");
+                        return { team: Number(team), av: av || null };
                       });
                     return (
                       <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
@@ -252,12 +255,7 @@ homeRoutes.get("/", (c) =>
                     <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                       <td>{i + 1}</td>
                       <td class="l">
-                        <TeamName
-                          team={t.team}
-                          name={`${t.team} ${t.name_short ?? ""}`}
-                          av={t.av}
-                          country={t.country}
-                        />
+                        <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} loc={t} />
                       </td>
                       <td class="w">{f1(t.best_opr_auto)}</td>
                       <td>{(c1.count ? f2 : f1)(t.best_opr_c1)}</td>
@@ -277,12 +275,7 @@ homeRoutes.get("/", (c) =>
                   {inspire.map((a, i) => (
                     <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                       <td class="l">
-                        <TeamName
-                          team={a.team}
-                          name={`${a.team} ${a.name_short ?? ""}`}
-                          av={a.av}
-                          country={a.country}
-                        />
+                        <TeamName team={a.team} name={`${a.team} ${a.name_short ?? ""}`} av={a.av} loc={a} />
                       </td>
                       <td class="l">
                         <a class="clip" href={`/events/${SEASON}/${a.event_code}`}>
@@ -446,7 +439,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
         .bind(season),
       d
         .prepare(
-          `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM ${table} s
+          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM ${table} s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT ? OFFSET ?`,
@@ -463,7 +456,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     if (results.length === 0 && total > 0 && page !== requested) {
       const again = await d
         .prepare(
-          `SELECT s.*, t.name_short, t.state_prov, t.country, av.key AS av FROM ${table} s
+          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM ${table} s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT ? OFFSET ?`,
@@ -557,6 +550,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
                         av={r.av}
                         num
                         season={season}
+                        loc={r as never}
                         sub={[r.state_prov, r.country].filter(Boolean).join(", ")}
                       />
                     </td>
@@ -604,7 +598,7 @@ homeRoutes.get("/search", async (c) => {
       : await d.batch([
           d
             .prepare(
-              `SELECT t.number, t.name_short, t.city, t.state_prov, t.country, av.key AS av FROM teams t
+              `SELECT t.number, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM teams t
                LEFT JOIN team_avatars av ON av.team = t.number
                WHERE t.name_short LIKE ?1 OR t.city LIKE ?1 ORDER BY t.number LIMIT 100`,
             )
@@ -622,6 +616,7 @@ homeRoutes.get("/search", async (c) => {
     city: string | null;
     state_prov: string | null;
     country: string | null;
+    home_region: string | null;
     av: string | null;
   }[];
   const events = (eR?.results ?? []) as {
@@ -649,6 +644,7 @@ homeRoutes.get("/search", async (c) => {
                       name={t.name_short}
                       av={t.av}
                       num
+                      loc={t}
                       sub={[t.city, t.state_prov, t.country].filter(Boolean).join(", ")}
                     />
                   </td>

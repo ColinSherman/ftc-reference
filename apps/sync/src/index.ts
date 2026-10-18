@@ -3,7 +3,7 @@ import { FtcApi, Throttle } from "@ftcref/ftc-api";
 import { CURRENT_SEASON, isSeason } from "@ftcref/seasons";
 import { advanceBackfill } from "./backfill";
 import type { Env, SyncMessage } from "./env";
-import { fetchAvatarBatch, syncAvatars } from "./jobs/avatars";
+import { avatarYears, fetchAvatarBatch, syncAvatars } from "./jobs/avatars";
 import { syncAwards } from "./jobs/awards";
 import { syncEventMatches } from "./jobs/eventMatches";
 import { syncEvents } from "./jobs/events";
@@ -139,10 +139,12 @@ export default {
       case "* * * * *": {
         const msgs = await planLive(env, season);
         // Self-heal: if avatars have never synced (fresh deploy), start now rather than at the next 6h tick.
-        const av = await env.DB.prepare("SELECT 1 FROM sync_state WHERE key = ?")
-          .bind(`avatars/${cmpYear}.css`)
-          .first();
-        if (!av) msgs.push({ job: "avatars", cmpYear });
+        for (const y of avatarYears(cmpYear)) {
+          const av = await env.DB.prepare("SELECT 1 FROM sync_state WHERE key = ?")
+            .bind(`avatars/${y}.css`)
+            .first();
+          if (!av) msgs.push({ job: "avatars", cmpYear: y });
+        }
         // Livestream auto-timing every 20 minutes (no-op, and no quota, when nothing new needs it).
         if (new Date().getUTCMinutes() % 20 === 7) msgs.push({ job: "streamAlign" });
         await enqueue(env, msgs);
@@ -154,7 +156,7 @@ export default {
         await enqueue(env, [
           { job: "events", season },
           { job: "leagues", season },
-          { job: "avatars", cmpYear },
+          ...avatarYears(cmpYear).map((y): SyncMessage => ({ job: "avatars", cmpYear: y })),
           { job: "videoScan" },
         ]);
         break;
