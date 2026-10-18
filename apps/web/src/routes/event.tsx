@@ -1,9 +1,19 @@
-import { getSeason, isSeason, type SeasonDescriptor, seasonLabel, weekOf } from "@ftcref/seasons";
+import {
+  getSeason,
+  isSeason,
+  OFFICIAL_KINDS,
+  type SeasonDescriptor,
+  seasonLabel,
+  weekOf,
+} from "@ftcref/seasons";
 import { Hono } from "hono";
+import { raw } from "hono/html";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
+import { listWindow, slicePage } from "../paging";
 import { isUsRegion, regionName } from "../regions";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
+import { Pager } from "../views/pager";
 import {
   Av,
   CompTh,
@@ -53,16 +63,7 @@ const COMPETITION = [
   "NonAdvancement",
   "Pilot",
 ];
-const OFFICIAL = [
-  "LeagueMeet",
-  "Qualifier",
-  "LeagueTournament",
-  "Championship",
-  "FIRSTChampionship",
-  "SuperQualifier",
-  "Premier",
-  "Pilot",
-];
+const OFFICIAL: string[] = [...OFFICIAL_KINDS];
 const NON_COMPETITION = [
   "Kickoff",
   "Workshop",
@@ -177,7 +178,22 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       const w = weekOf(desc, e.date_start);
       weeks.set(w, [...(weeks.get(w) ?? []), e]);
     }
-    const qs = () => {
+    const { size, page: requested } = listWindow(c);
+    const flat: { w: number; e: EventListRow }[] = [];
+    for (const [w, es] of weeks) for (const e of es) flat.push({ w, e });
+    // No ?page= means "where the season is now": this week, or the next week that has events.
+    const weekNums = [...weeks.keys()];
+    const here = weekNums.find((w) => w >= weekOf(desc, today)) ?? null;
+    const hereAt = here == null ? -1 : flat.findIndex((row) => row.w === here);
+    const opening = c.req.query("page") == null && hereAt >= 0;
+    const pg = slicePage(flat, opening ? Math.floor(hereAt / size) + 1 : requested, size);
+    const shown = new Map<number, EventListRow[]>();
+    for (const row of pg.rows) {
+      const list = shown.get(row.w);
+      if (list) list.push(row.e);
+      else shown.set(row.w, [row.e]);
+    }
+    const qs = (page?: number) => {
       const p = new URLSearchParams();
       if (type !== "comp") p.set("type", type);
       if (region !== "all") p.set("region", region);
@@ -185,9 +201,12 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       if (q) p.set("q", q);
       if (withResults) p.set("results", "1");
       if (withVideo) p.set("video", "1");
+      // Page 1 stays in the query so Prev from page 2 doesn't bounce back to this week.
+      if (page != null) p.set("page", String(page));
       const s = p.toString();
       return s ? `?${s}` : "";
     };
+    const href = (p: number) => `/events/${season}${qs(p)}`;
     const auto = { onchange: "this.form.submit()" } as Record<string, string>;
     const filtered =
       type !== "comp" || region !== "all" || format !== "all" || !!q || withResults || withVideo;
@@ -305,75 +324,103 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
         {events.length === 0 ? (
           <p class="note">No events match these filters.</p>
         ) : (
-          <div class="scroll">
-            <table class="st" style="width:100%">
-              <thead>
-                <tr>
-                  <th class="l">Dates</th>
-                  <th class="l">Event</th>
-                  <th>Teams</th>
-                  <th title="Matches with results">Played</th>
-                  <th class="l">Status</th>
-                </tr>
-              </thead>
-              {[...weeks].map(([w, es]) => (
-                <tbody>
-                  <tr class="wkh">
-                    <th colspan={5}>
-                      {w < 1 ? "Preseason" : `Week ${w}`}
-                      <span>
-                        {weekRange(desc, w)} · {es.length} event{es.length === 1 ? "" : "s"}
-                      </span>
-                    </th>
+          <>
+            <Pager
+              page={pg.page}
+              pages={pg.pages}
+              total={pg.total}
+              start={pg.start}
+              size={pg.size}
+              href={href}
+            />
+            <div class="scroll">
+              <table class="st" style="width:100%">
+                <thead>
+                  <tr>
+                    <th class="l">Dates</th>
+                    <th class="l">Event</th>
+                    <th>Teams</th>
+                    <th title="Matches with results">Played</th>
+                    <th class="l">Status</th>
                   </tr>
-                  {es.map((e) => (
-                    <tr
-                      class={
-                        e.played > 0
-                          ? "has"
-                          : eventStatus(e.date_start, e.date_end, today) === "final"
-                            ? "nores"
-                            : undefined
-                      }
-                    >
-                      <td class="l" data-v={e.date_start}>
-                        {fmtDateRange(e.date_start, e.date_end)}
-                      </td>
-                      <td class="l wrap">
-                        <a class="ev" href={`/events/${season}/${e.code}`}>
-                          {e.name}
-                        </a>{" "}
-                        {e.played > 0 && (
-                          <span class="dot" title={`${e.played} matches with results`}>
-                            ● results
-                          </span>
-                        )}{" "}
-                        {videoCount.has(e.code) && (
-                          <a
-                            class="vtag"
-                            href={`/events/${season}/${e.code}#matches`}
-                            title={`${videoCount.get(e.code)} matches with video`}
-                          >
-                            ▶ video
-                          </a>
-                        )}{" "}
-                        {e.remote ? <span class="pill">remote</span> : ""}
-                        <div class="sub">
-                          {(e.kind && KIND_LABELS[e.kind]) ?? e.type_name} ·{" "}
-                          {[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}
-                        </div>
-                      </td>
-                      <td>{e.teams || ""}</td>
-                      <td>{e.played || ""}</td>
-                      <td class="l">
-                        <StatusPill s={eventStatus(e.date_start, e.date_end, today)} />
-                      </td>
+                </thead>
+                {[...shown].map(([w, es]) => (
+                  <tbody>
+                    <tr class="wkh" id={opening && w === here ? "wk" : undefined}>
+                      <th colspan={5}>
+                        {w < 1 ? "Preseason" : `Week ${w}`}
+                        <span>
+                          {(() => {
+                            const n = weeks.get(w)?.length ?? es.length;
+                            return `${weekRange(desc, w)} · ${n} event${n === 1 ? "" : "s"}`;
+                          })()}
+                        </span>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              ))}
-            </table>
-          </div>
+                    {es.map((e) => (
+                      <tr
+                        class={
+                          e.played > 0
+                            ? "has"
+                            : eventStatus(e.date_start, e.date_end, today) === "final"
+                              ? "nores"
+                              : undefined
+                        }
+                      >
+                        <td class="l" data-v={e.date_start}>
+                          {fmtDateRange(e.date_start, e.date_end)}
+                        </td>
+                        <td class="l wrap">
+                          <a class="ev" href={`/events/${season}/${e.code}`}>
+                            {e.name}
+                          </a>{" "}
+                          {e.played > 0 && (
+                            <span class="dot" title={`${e.played} matches with results`}>
+                              ● results
+                            </span>
+                          )}{" "}
+                          {videoCount.has(e.code) && (
+                            <a
+                              class="vtag"
+                              href={`/events/${season}/${e.code}#matches`}
+                              title={`${videoCount.get(e.code)} matches with video`}
+                            >
+                              ▶ video
+                            </a>
+                          )}{" "}
+                          {e.remote ? <span class="pill">remote</span> : ""}
+                          <div class="sub">
+                            {(e.kind && KIND_LABELS[e.kind]) ?? e.type_name} ·{" "}
+                            {[e.city, e.state_prov, e.country].filter(Boolean).join(", ")}
+                          </div>
+                        </td>
+                        <td>{e.teams || ""}</td>
+                        <td>{e.played || ""}</td>
+                        <td class="l">
+                          <StatusPill s={eventStatus(e.date_start, e.date_end, today)} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
+              </table>
+            </div>
+            {opening && (
+              <script>
+                {raw(
+                  'var w=document.getElementById("wk");if(w&&w.getBoundingClientRect().top>innerHeight*0.35)w.scrollIntoView()',
+                )}
+              </script>
+            )}
+            <Pager
+              page={pg.page}
+              pages={pg.pages}
+              total={pg.total}
+              start={pg.start}
+              size={pg.size}
+              href={href}
+            />
+          </>
         )}
       </Layout>,
     );

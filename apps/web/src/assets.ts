@@ -38,6 +38,12 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .st td.r{color:var(--red)}.st td.b{color:var(--blue)}.st td.w{font-weight:bold}
 .st tfoot td{font-weight:bold;border-top:2px solid var(--fg)}
 .note{color:var(--muted);font-size:11px}
+.os{display:inline-flex;align-items:center;gap:6px;color:var(--brand-fg);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}
+.os:hover{text-decoration:none}
+.os i{width:28px;height:16px;border:1px solid rgba(255,255,255,.55);border-radius:8px;position:relative;flex:none}
+.os i:before{content:"";position:absolute;top:1px;left:1px;width:12px;height:12px;border-radius:50%;background:var(--brand-fg)}
+html[data-stats=all] .os i{background:rgba(255,255,255,.28)}
+html[data-stats=all] .os i:before{left:13px}
 .pill{display:inline-block;padding:0 5px;border-radius:2px;font-size:11px;background:var(--head);border:1px solid var(--line)}
 .live{background:var(--red);color:#fff;border-color:var(--red)}
 .st th.rh{background:var(--red-bg);color:var(--red)}.st th.bh{background:var(--blue-bg);color:var(--blue)}
@@ -63,7 +69,16 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .sbv{font:22px Georgia,serif;font-variant-numeric:tabular-nums;line-height:1.2}.sbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}.sbs{font-size:11px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 22px;align-items:start}
 .box h3{display:flex;align-items:baseline;gap:8px;margin:14px 0 4px;padding:3px 0;border-bottom:2px solid var(--rule);font-size:16px}
+.st td.wk{white-space:normal;min-width:0;overflow-wrap:anywhere}.st td.wk a{white-space:normal}
+a.mark{font-size:11px;margin-left:5px;text-decoration:none}
+.st td.wk a.mark{white-space:nowrap}
+a.mark.res{color:var(--win)}a.mark.vid{color:var(--red)}a.mark:hover{color:var(--fg)}
+.st td.when{white-space:nowrap;width:1%}
+.box a.clip{display:inline-block;max-width:16em;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;white-space:nowrap}
 .box .more{margin-left:auto;font:11px Verdana,sans-serif}
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:4px 0 8px;font-size:12px}
+.pager .off{color:var(--muted)}
+.pager select{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .box table.st{width:100%}
 .res{display:inline-block;min-width:16px;text-align:center;font-weight:bold;font-size:11px;border-radius:2px;padding:0 3px}
 .resW{color:var(--win);background:var(--win-bg)}.resL{color:var(--muted)}.resT{color:var(--fg);background:var(--head)}
@@ -80,6 +95,7 @@ table.st{border-collapse:collapse;font-size:12px;margin:4px 0 12px;white-space:n
 .stk .col{display:flex;flex-direction:column-reverse;align-items:center;gap:2px;min-height:60px;justify-content:flex-start;padding:3px 6px;border-bottom:3px solid var(--line)}
 .ball{width:13px;height:13px;border-radius:50%;display:block}.ball.R{background:var(--red)}.ball.B{background:var(--blue)}.ball.P{background:var(--pollen);width:10px;height:10px}
 .wkh th{background:var(--bg);border-top:0;text-align:left;font:15px Georgia,serif;padding:14px 4px 3px;cursor:default;position:static;border-bottom:2px solid var(--rule)}
+#wk{scroll-margin-top:32px}
 .wkh th span{font:11px Verdana,sans-serif;color:var(--muted);margin-left:8px}
 .filters{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:end;margin:6px 0 4px;padding:8px 10px;background:var(--zebra);border:1px solid var(--line)}
 .filters label{display:flex;flex-direction:column;font-size:11px;color:var(--muted);gap:2px}
@@ -110,7 +126,7 @@ form.shift{display:flex;flex-wrap:wrap;gap:3px;align-items:center}form.shift .go
 .ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
-@media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}}
+@media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}tr.mhide{display:none}}
 `.replace(/\n/g, "");
 
 /** Click-to-sort for every table.st. Numbers sort descending first (stats convention). */
@@ -134,16 +150,22 @@ export const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON
 
 /** Runs in <head> before first paint so a saved theme never flashes the wrong colors. */
 export const THEME_HEAD_JS =
-  'try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}';
+  'try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}' +
+  'try{if(/(?:^|; )stats=all(?:;|$)/.test(document.cookie))document.documentElement.dataset.stats="all"}catch(e){}';
 
 /** Header button: cycles auto → light → dark, remembered per browser. */
-export const THEME_TOGGLE_JS = `(function(){var b=document.getElementById("tt");if(!b)return;
+export const THEME_TOGGLE_JS =
+  `(function(){var b=document.getElementById("tt");if(!b)return;
 var L={auto:"◐ Auto",light:"☀ Light",dark:"☾ Dark"},N={auto:"light",light:"dark",dark:"auto"};
 var cur=function(){return document.documentElement.dataset.theme||"auto"};
 var show=function(){var c=cur();b.textContent=L[c];b.title="Theme: "+c+" (click to change)"};show();
 b.addEventListener("click",function(){var n=N[cur()],r=document.documentElement;
 if(n==="auto")delete r.dataset.theme;else r.dataset.theme=n;
-try{n==="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",n)}catch(e){}show()})})();document.addEventListener("keydown",function(e){var a=document.activeElement;if(e.key==="/"&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){var i=document.querySelector(".top input");if(i){e.preventDefault();i.focus()}}});`.replace(
-  /\n/g,
-  "",
-);
+try{n==="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",n)}catch(e){}show()})})();` +
+  `(function(){var a=document.getElementById("os");if(!a)return;var on=function(){return document.documentElement.dataset.stats==="all"};
+var show=function(){var v=on();a.setAttribute("aria-checked",v?"true":"false");a.title=v?"Including off-season events in records and leaderboards":"Off-season events are left out of records and leaderboards"};
+show();a.addEventListener("click",function(e){e.preventDefault();var u=new URL(location.href);u.searchParams.set("stats",on()?"official":"all");location.href=u.pathname+u.search})})();` +
+  `document.addEventListener("keydown",function(e){var a=document.activeElement;if(e.key==="/"&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){var i=document.querySelector(".top input");if(i){e.preventDefault();i.focus()}}});`.replace(
+    /\n/g,
+    "",
+  );

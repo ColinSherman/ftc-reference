@@ -2,6 +2,7 @@ import { SEASONS } from "./descriptors";
 import type { ApiScore, SeasonDescriptor } from "./types";
 
 export { SEASONS } from "./descriptors";
+export { OFFICIAL_KINDS, officialKindIn, SEASON_KINDS, seasonKindIn } from "./official";
 export * from "./types";
 
 export const CURRENT_SEASON = 2026;

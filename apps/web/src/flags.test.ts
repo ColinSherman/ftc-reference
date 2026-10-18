@@ -6,6 +6,8 @@ describe("flagCode", () => {
     expect(flagCode("USA")).toBe("us");
     expect(flagCode("Canada")).toBe("ca");
     expect(flagCode("Türkiye")).toBe("tr");
+    expect(flagCode("Kazakhstan")).toBe("kz");
+    expect(flagCode("Chinese Taipei")).toBe("tw");
     expect(flagCode(null, "USCALA")).toBe("us");
     expect(flagCode("", "CAON")).toBe("ca");
     expect(flagCode(null, "DE")).toBe("de");

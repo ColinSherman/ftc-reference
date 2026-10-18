@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { FAVICON_SVG } from "./assets";
 import type { Env } from "./env";
+import { pageSizeOf } from "./paging";
 import { adminRoutes } from "./routes/admin";
 import { avatarRoutes } from "./routes/avatar";
 import { channelRoutes } from "./routes/channels";
@@ -20,6 +21,27 @@ app.use("*", async (c, next) => {
   if (url.hostname === "www.ftc-reference.com") {
     url.hostname = "ftc-reference.com";
     return c.redirect(url.toString(), 301);
+  }
+  await next();
+});
+
+// `?stats=` and `?per=` remember a viewer's choice, then return to the clean URL.
+app.use("*", async (c, next) => {
+  if (c.req.method === "GET") {
+    const stats = c.req.query("stats");
+    const per = pageSizeOf(c.req.query("per"));
+    const rememberStats = stats === "all" || stats === "official";
+    if (rememberStats || per) {
+      const url = new URL(c.req.url);
+      url.searchParams.delete("stats");
+      url.searchParams.delete("per");
+      const res = c.redirect(`${url.pathname}${url.search}`, 303);
+      if (rememberStats) {
+        res.headers.append("Set-Cookie", `stats=${stats}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      }
+      if (per) res.headers.append("Set-Cookie", `per=${per}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      return res;
+    }
   }
   await next();
 });
