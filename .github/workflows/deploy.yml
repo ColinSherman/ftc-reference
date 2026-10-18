@@ -1,0 +1,32 @@
+name: Deploy production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Queue deploys instead of cancelling: a half-finished deploy could leave sync and web out of step.
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: a92ff6c4b72094e5030585f2363b940a
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm lint
+      # Migrations first: the new code may query tables or columns they add.
+      - run: pnpm db:migrate:remote
+      # Sync before web, so the data the new pages expect is being written by the time they go live.
+      - run: pnpm deploy
