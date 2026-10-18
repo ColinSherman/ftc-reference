@@ -1,0 +1,7 @@
+{
+  "_comment": "Team number → Instagram handle (or profile URL), used by scripts/instagram-avatars.mjs for teams without a FIRST avatar. Overrides the FIRST website field and website crawl; null suppresses a team.",
+  "7305": "gearcats7305",
+  "28078": "ftckryptonite_",
+  "28588": "amd.ftc",
+  "34730": "sipi6_ftc"
+}
