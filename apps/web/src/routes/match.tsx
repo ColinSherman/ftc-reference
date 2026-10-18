@@ -1,11 +1,25 @@
-import { type ApiScore, getSeason, isSeason, seasonLabel } from "@ftcref/seasons";
+import {
+  type ApiScore,
+  type BoxReport,
+  buildBoxScore,
+  getSeason,
+  isSeason,
+  readLine,
+  readLog,
+  readQual,
+  seasonLabel,
+} from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
+import { BoxScoreSection } from "../views/box";
 import { Layout } from "../views/layout";
 import { Av } from "../views/ui";
+import { submitScout } from "./scout";
 
 export const matchRoutes = new Hono<{ Bindings: Env }>();
+
+matchRoutes.post("/:season{[0-9]{4}}/:code/:slug/scout", submitScout);
 
 type TeamRow = {
   alliance: string;
@@ -76,7 +90,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
     const prev = idx > 0 ? list[idx - 1] : undefined;
     const next = idx >= 0 ? list[idx + 1] : undefined;
 
-    const [teamsR, scoresR, videoR] = await d.batch([
+    const [teamsR, scoresR, videoR, scoutR] = await d.batch([
       d
         .prepare(
           `SELECT mt.*, t.name_short, av.key AS av FROM match_teams mt
@@ -89,6 +103,12 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       d
         .prepare(
           "SELECT video_id, start_s, title, channel_title, source FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY source = 'auto_align', votes DESC, id LIMIT 6",
+        )
+        .bind(m.id),
+      d
+        .prepare(
+          `SELECT id, team, by_name, mode, line_json, qual_json, log_json, created_at
+           FROM scout_reports WHERE match_id = ? AND status = 'live' ORDER BY id`,
         )
         .bind(m.id),
     ]);
@@ -104,6 +124,28 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
     };
     const red = parse("R");
     const blue = parse("B");
+    const scoutRows = (scoutR?.results ?? []) as {
+      id: number;
+      team: number;
+      by_name: string | null;
+      mode: string;
+      line_json: string;
+      qual_json: string;
+      log_json: string | null;
+      created_at: string;
+    }[];
+    const reports: BoxReport[] = desc.box
+      ? scoutRows.map((r) => ({
+          id: r.id,
+          team: r.team,
+          by: r.by_name,
+          mode: r.mode === "log" ? "log" : "line",
+          line: readLine(r.line_json, desc.box),
+          qual: readQual(r.qual_json),
+          log: readLog(r.log_json),
+          createdAt: r.created_at,
+        }))
+      : [];
     const videos = (videoR?.results ?? []) as {
       video_id: string;
       start_s: number | null;
@@ -176,6 +218,39 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
           <Side ally="R" />
           {!remote && <Side ally="B" />}
         </div>
+
+        {desc.box && (
+          <BoxScoreSection
+            box={desc.box}
+            table={buildBoxScore(
+              desc.box,
+              teams.map((t) => ({
+                alliance: t.alliance === "B" ? "B" : "R",
+                station: t.station,
+                team: t.team,
+                name: t.name_short,
+                av: t.av,
+                surrogate: !!t.surrogate,
+                dq: !!t.dq,
+                noShow: !!t.no_show,
+              })),
+              reports,
+              { R: red, B: blue },
+              !!m.played,
+            )}
+            season={season}
+            action={`/events/${season}/${code}/${c.req.param("slug")}/scout`}
+            teams={[...teams]
+              .sort((a, b) =>
+                a.alliance === b.alliance ? a.station.localeCompare(b.station) : a.alliance === "R" ? -1 : 1,
+              )
+              .map((t) => ({
+                team: t.team,
+                name: t.name_short,
+                alliance: t.alliance === "B" ? "B" : "R",
+              }))}
+          />
+        )}
 
         <div class="mx">
           <div>

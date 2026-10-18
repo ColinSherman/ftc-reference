@@ -1,6 +1,7 @@
 import { SEASONS } from "./descriptors";
 import type { ApiScore, SeasonDescriptor } from "./types";
 
+export * from "./box";
 export { SEASONS } from "./descriptors";
 export * from "./types";
 

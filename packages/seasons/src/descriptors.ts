@@ -1,3 +1,4 @@
+import { biobuzzBox } from "./box";
 import { type ApiScore, majors, minors, n, type SeasonDescriptor } from "./types";
 
 const fouls = (lbl = "Fouls"): SeasonDescriptor["breakdown"] => [
@@ -480,6 +481,7 @@ const biobuzz: SeasonDescriptor = {
     { label: "POLLINATOR 1 RP", value: (a: ApiScore) => !!a.pollinator1RP },
     { label: "POLLINATOR 2 RP", value: (a: ApiScore) => !!a.pollinator2RP },
   ],
+  box: biobuzzBox,
 };
 
 export const SEASONS: Record<number, SeasonDescriptor> = Object.fromEntries(
