@@ -7,6 +7,7 @@ import {
   weekOf,
 } from "@ftcref/seasons";
 import { Hono } from "hono";
+import { raw } from "hono/html";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
 import { listWindow, slicePage } from "../paging";
@@ -180,14 +181,19 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
     const { size, page: requested } = listWindow(c);
     const flat: { w: number; e: EventListRow }[] = [];
     for (const [w, es] of weeks) for (const e of es) flat.push({ w, e });
-    const pg = slicePage(flat, requested, size);
+    // No ?page= means "where the season is now": this week, or the next week that has events.
+    const weekNums = [...weeks.keys()];
+    const here = weekNums.find((w) => w >= weekOf(desc, today)) ?? null;
+    const hereAt = here == null ? -1 : flat.findIndex((row) => row.w === here);
+    const opening = c.req.query("page") == null && hereAt >= 0;
+    const pg = slicePage(flat, opening ? Math.floor(hereAt / size) + 1 : requested, size);
     const shown = new Map<number, EventListRow[]>();
     for (const row of pg.rows) {
       const list = shown.get(row.w);
       if (list) list.push(row.e);
       else shown.set(row.w, [row.e]);
     }
-    const qs = (page = 1) => {
+    const qs = (page?: number) => {
       const p = new URLSearchParams();
       if (type !== "comp") p.set("type", type);
       if (region !== "all") p.set("region", region);
@@ -195,7 +201,8 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       if (q) p.set("q", q);
       if (withResults) p.set("results", "1");
       if (withVideo) p.set("video", "1");
-      if (page > 1) p.set("page", String(page));
+      // Page 1 stays in the query so Prev from page 2 doesn't bounce back to this week.
+      if (page != null) p.set("page", String(page));
       const s = p.toString();
       return s ? `?${s}` : "";
     };
@@ -339,7 +346,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
                 </thead>
                 {[...shown].map(([w, es]) => (
                   <tbody>
-                    <tr class="wkh">
+                    <tr class="wkh" id={opening && w === here ? "wk" : undefined}>
                       <th colspan={5}>
                         {w < 1 ? "Preseason" : `Week ${w}`}
                         <span>
@@ -398,6 +405,13 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
                 ))}
               </table>
             </div>
+            {opening && (
+              <script>
+                {raw(
+                  'var w=document.getElementById("wk");if(w&&w.getBoundingClientRect().top>innerHeight*0.35)w.scrollIntoView()',
+                )}
+              </script>
+            )}
             <Pager
               page={pg.page}
               pages={pg.pages}
