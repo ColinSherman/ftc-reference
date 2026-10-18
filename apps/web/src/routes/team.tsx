@@ -1,10 +1,11 @@
-import { getSeason, isSeason, seasonLabel } from "@ftcref/seasons";
+import { getSeason, isSeason, SEASON_KINDS, seasonKindIn, seasonLabel } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { flagCode, placeTitle } from "../flags";
 import { imgurUrl, instagramEmbed, instagramUrl } from "../media";
 import { regionName } from "../regions";
+import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
 import { Av, CompTh, Flag, Result, StatBox, TeamLinks, Th, VidCell } from "../views/ui";
 
@@ -28,12 +29,15 @@ interface LogRow {
   teams: string | null;
 }
 
+const COUNTED = new Set<string>(SEASON_KINDS);
+
 type Ev = Record<string, number | null> & {
   code: string;
   name: string;
   date_start: string;
   date_end: string;
   type_name: string | null;
+  kind: string | null;
 };
 
 type Career = {
@@ -57,6 +61,9 @@ type Career = {
 teamRoutes.get("/:n{[0-9]+}", (c) =>
   cached(c, { ttl: 120 }, async () => {
     const n = Number(c.req.param("n"));
+    const mode = statsMode(c);
+    const table = seasonStatsTable(mode);
+    const awardKind = mode === "official" ? `AND ${seasonKindIn("ae")}` : "";
     const d = db(c);
     const [teamR, careerR, mediaR] = await d.batch([
       d
@@ -70,12 +77,14 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
           `SELECT y.year AS season, y.game_name, ts.name_short AS team_name,
                   s.events_played, s.wins, s.losses, s.ties, s.best_opr_np, s.best_opr_auto, s.best_event, s.best_np,
                   CASE WHEN s.best_opr_np IS NULL THEN NULL ELSE
-                    (SELECT COUNT(*) FROM team_season_stats x WHERE x.season = y.year AND x.best_opr_np > s.best_opr_np) + 1 END AS world_rank,
-                  (SELECT COUNT(*) FROM team_season_stats x WHERE x.season = y.year) AS ranked,
-                  (SELECT COUNT(*) FROM awards a WHERE a.season = y.year AND a.team = ?1) AS awards
+                    (SELECT COUNT(*) FROM ${table} x WHERE x.season = y.year AND x.best_opr_np > s.best_opr_np) + 1 END AS world_rank,
+                  (SELECT COUNT(*) FROM ${table} x WHERE x.season = y.year) AS ranked,
+                  (SELECT COUNT(*) FROM awards a
+                    JOIN events ae ON ae.season = a.season AND ae.code = a.event_code
+                    WHERE a.season = y.year AND a.team = ?1 ${awardKind}) AS awards
            FROM seasons y
            LEFT JOIN team_seasons ts ON ts.season = y.year AND ts.number = ?1
-           LEFT JOIN team_season_stats s ON s.season = y.year AND s.team = ?1
+           LEFT JOIN ${table} s ON s.season = y.year AND s.team = ?1
            WHERE ts.number IS NOT NULL OR s.team IS NOT NULL
            ORDER BY y.year DESC`,
         )
@@ -114,7 +123,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
       d.prepare("SELECT * FROM team_seasons WHERE season = ? AND number = ?").bind(season, n),
       d
         .prepare(
-          `SELECT e.code, e.name, e.date_start, e.date_end, e.type_name, s.*, r.rank AS official_rank
+          `SELECT e.code, e.name, e.date_start, e.date_end, e.type_name, e.kind, s.*, r.rank AS official_rank
            FROM event_teams et
            JOIN events e ON e.season = et.season AND e.code = et.event_code
            LEFT JOIN team_event_stats s ON s.season = et.season AND s.event_code = et.event_code AND s.team = et.team
@@ -138,16 +147,21 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         .bind(n, season),
       d
         .prepare(
-          `SELECT a.name, a.event_code, e.name AS event_name FROM awards a
+          `SELECT a.name, a.event_code, e.name AS event_name, e.kind FROM awards a
            JOIN events e ON e.season = a.season AND e.code = a.event_code
            WHERE a.team = ? AND a.season = ? ORDER BY e.date_start`,
         )
         .bind(n, season),
     ]);
     const ts = tsR?.results[0] as Record<string, string | null> | undefined;
-    const events = (evR?.results ?? []) as unknown as Ev[];
-    const log = (logR?.results ?? []) as LogRow[];
-    const awards = (awR?.results ?? []) as { name: string; event_code: string; event_name: string }[];
+    const allEvents = (evR?.results ?? []) as unknown as Ev[];
+    const events =
+      mode === "all" ? allEvents : allEvents.filter((e) => e.kind != null && COUNTED.has(e.kind));
+    const shown = new Set(events.map((e) => e.code));
+    const log = ((logR?.results ?? []) as LogRow[]).filter((m) => mode === "all" || shown.has(m.event_code));
+    const awards = (
+      (awR?.results ?? []) as { name: string; event_code: string; event_name: string; kind: string | null }[]
+    ).filter((a) => mode === "all" || (a.kind != null && COUNTED.has(a.kind)));
     const ss = career.find((r) => r.season === season);
     const location = [team.city, team.state_prov, team.country].filter(Boolean).join(", ");
     const flag = flagCode(team.country as string | null, team.home_region as string | null);
@@ -191,8 +205,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
             <div class="bio">
               {location && (
                 <div title={hover}>
-                  <b>Location:</b> <Flag code={flag} title={hover} />
-                  {location}
+                  <b>Location:</b> <Flag code={flag} title={hover} /> {location}
                 </div>
               )}
               {team.home_region && (

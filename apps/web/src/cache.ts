@@ -1,4 +1,6 @@
+import { getCookie } from "hono/cookie";
 import type { AppContext } from "./env";
+import { chosenPageSize } from "./paging";
 
 /**
  * Edge HTML cache with version-keyed invalidation. The sync Worker bumps KV keys such as
@@ -19,6 +21,9 @@ export async function cached(
   const url = new URL(c.req.url);
   url.searchParams.set("__v", vers.map((v) => v ?? "0").join("."));
   url.searchParams.set("__d", c.env.CF_VERSION?.id ?? "dev");
+  // Official vs all-events totals are different pages. The cookie is the viewer's choice.
+  url.searchParams.set("__s", getCookie(c, "stats") === "all" ? "all" : "off");
+  url.searchParams.set("__p", String(chosenPageSize(getCookie(c, "per"))));
   const key = new Request(url.toString(), { method: "GET" });
   const cache = caches.default;
 
