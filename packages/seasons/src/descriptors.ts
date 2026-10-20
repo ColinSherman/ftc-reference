@@ -513,11 +513,12 @@ const biobuzz: SeasonDescriptor = {
   ],
   corrections: {
     // Scorekeepers counted every piece from every tip in the final CELL count, not just the pieces
-    // still in CELLs at the end. 8+ is capped at 7, which may still overstate some alliances.
+    // still in CELLs at the end. 9+ is capped at 8 (a softly placed 8th piece need not cause a tip),
+    // which may still overstate some alliances.
     KZASN1: {
-      note: "Scorekeepers counted every piece from every tip as still in a CELL. Counts of 8 or more are capped at 7 (which may still be high) and the points rescored.",
+      note: "Scorekeepers counted every piece from every tip as still in a CELL. Counts of 9 or more are capped at 8 (which may still be high) and the points rescored.",
       affects: ["np", "total", "teleop", "c2"],
-      apply: capCellPieces(7),
+      apply: capCellPieces(8),
     },
   },
 };

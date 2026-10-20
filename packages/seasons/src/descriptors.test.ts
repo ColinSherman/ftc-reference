@@ -56,15 +56,15 @@ describe("season descriptors", () => {
     };
     const fixed = fix?.apply(reported);
     expect(fixed).toMatchObject({
-      teleopHivePollenNectar: 7,
-      teleopHivePoints: 54,
-      teleopPoints: 59,
-      preFoulTotal: 135,
-      totalPoints: 155,
+      teleopHivePollenNectar: 8,
+      teleopHivePoints: 56,
+      teleopPoints: 61,
+      preFoulTotal: 137,
+      totalPoints: 157,
       reportedHivePollenNectar: 25,
     });
-    expect(scoreColumns(getSeason(2026), fixed ?? {})).toMatchObject({ np: 135, total: 155, c2: 54 });
-    expect(fix?.apply({ ...reported, teleopHivePollenNectar: 7 })).toBeNull();
+    expect(scoreColumns(getSeason(2026), fixed ?? {})).toMatchObject({ np: 137, total: 157, c2: 56 });
+    expect(fix?.apply({ ...reported, teleopHivePollenNectar: 8 })).toBeNull();
     expect(correctionFor(2026, "USCHSUBQ1")).toBeUndefined();
     expect(correctedStat(2026, "KZASN1", "np")).toBe(true);
     expect(correctedStat(2026, "KZASN1", "auto")).toBe(false);
