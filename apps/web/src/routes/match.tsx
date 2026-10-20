@@ -1,4 +1,4 @@
-import { type ApiScore, getSeason, isSeason, seasonLabel } from "@ftcref/seasons";
+import { type ApiScore, correctionFor, getSeason, isSeason, seasonLabel } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
@@ -85,7 +85,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
            WHERE mt.match_id = ? ORDER BY mt.station`,
         )
         .bind(m.id),
-      d.prepare("SELECT alliance, np, detail FROM match_scores WHERE match_id = ?").bind(m.id),
+      d.prepare("SELECT alliance, np, detail, adjusted FROM match_scores WHERE match_id = ?").bind(m.id),
       d
         .prepare(
           "SELECT video_id, start_s, title, channel_title, source FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY source = 'auto_align', votes DESC, id LIMIT 6",
@@ -93,7 +93,13 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
         .bind(m.id),
     ]);
     const teams = (teamsR?.results ?? []) as TeamRow[];
-    const scores = (scoresR?.results ?? []) as { alliance: string; np: number; detail: string }[];
+    const scores = (scoresR?.results ?? []) as {
+      alliance: string;
+      np: number;
+      detail: string;
+      adjusted: number;
+    }[];
+    const correction = scores.some((s) => s.adjusted) ? correctionFor(season, code) : undefined;
     const parse = (a: string) => {
       const s = scores.find((x) => x.alliance === a);
       try {
@@ -228,6 +234,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
                     </tbody>
                   </table>
                 </div>
+                {correction && <p class="note">* Corrected score. {correction.note}</p>}
                 {desc.penaltiesDeducted && (
                   <p class="note">
                     This season, penalties were deducted from the offending alliance's own score.

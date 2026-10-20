@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_SEASONS,
+  correctedStat,
+  correctionFor,
   getSeason,
   OFFICIAL_KINDS,
   SEASON_KINDS,
@@ -38,6 +40,34 @@ describe("season descriptors", () => {
       c1: 5,
       c2: 92,
     });
+  });
+
+  it("caps over-counted CELL pieces at KZASN1 and rescores", () => {
+    const fix = correctionFor(2026, "KZASN1");
+    // KZASN1 Q1 red as reported: 2 tips + 25 pieces = 90 HIVE points.
+    const reported = {
+      autoPoints: 76,
+      teleopHiveTips: 2,
+      teleopHivePollenNectar: 25,
+      teleopHivePoints: 90,
+      teleopPoints: 95,
+      preFoulTotal: 171,
+      totalPoints: 191,
+    };
+    const fixed = fix?.apply(reported);
+    expect(fixed).toMatchObject({
+      teleopHivePollenNectar: 7,
+      teleopHivePoints: 54,
+      teleopPoints: 59,
+      preFoulTotal: 135,
+      totalPoints: 155,
+      reportedHivePollenNectar: 25,
+    });
+    expect(scoreColumns(getSeason(2026), fixed ?? {})).toMatchObject({ np: 135, total: 155, c2: 54 });
+    expect(fix?.apply({ ...reported, teleopHivePollenNectar: 7 })).toBeNull();
+    expect(correctionFor(2026, "USCHSUBQ1")).toBeUndefined();
+    expect(correctedStat(2026, "KZASN1", "np")).toBe(true);
+    expect(correctedStat(2026, "KZASN1", "auto")).toBe(false);
   });
 
   it("rebuilds the SKYSTONE endgame the API reports as 0", () => {

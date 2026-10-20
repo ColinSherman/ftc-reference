@@ -1,4 +1,12 @@
-import { ALL_SEASONS, getSeason, isSeason, SEASONS, seasonKindIn, seasonLabel } from "@ftcref/seasons";
+import {
+  ALL_SEASONS,
+  correctedStat,
+  getSeason,
+  isSeason,
+  SEASONS,
+  seasonKindIn,
+  seasonLabel,
+} from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
@@ -7,6 +15,8 @@ import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
 import { Pager } from "../views/pager";
 import {
+  Adj,
+  AdjNote,
   Box,
   eventStatus,
   heatScale,
@@ -66,7 +76,7 @@ homeRoutes.get("/", (c) =>
         .bind(SEASON),
       d
         .prepare(
-          `SELECT m.event_code, m.level, m.series, m.match_number, s.alliance, s.np,
+          `SELECT m.event_code, m.level, m.series, m.match_number, s.alliance, s.np, s.adjusted,
                   (SELECT group_concat(x.team || ':' || COALESCE(xa.key, ''), char(31))
                    FROM match_teams x
                    LEFT JOIN team_avatars xa ON xa.team = x.team
@@ -122,6 +132,7 @@ homeRoutes.get("/", (c) =>
       match_number: number;
       alliance: string;
       np: number;
+      adjusted: number;
       teams: string | null;
       has_video: number;
     }[];
@@ -185,13 +196,17 @@ homeRoutes.get("/", (c) =>
                       <td class="l">
                         <TeamName team={t.team} name={`${t.team} ${t.name_short ?? ""}`} av={t.av} loc={t} />
                       </td>
-                      <td class="w">{f1(t.best_opr_np)}</td>
+                      <td class="w">
+                        {f1(t.best_opr_np)}
+                        {correctedStat(SEASON, t.best_event, "np") && <Adj />}
+                      </td>
                       <td data-v={t.wins}>{wlt(t.wins, t.losses, t.ties)}</td>
                     </tr>
                   ))}
                 </tbody>
               </Table>
             )}
+            {top.some((t) => correctedStat(SEASON, t.best_event, "np")) && <AdjNote />}
           </Box>
 
           <Box title="Highest Scores" more={{ href: `/seasons/${SEASON}/leaders?sort=maxnp`, label: "More" }}>
@@ -220,7 +235,10 @@ homeRoutes.get("/", (c) =>
                     return (
                       <tr class={i >= HOME_STAT_MOBILE ? "mhide" : undefined}>
                         <VidCell href={href} has={h.has_video} />
-                        <td class="w">{h.np}</td>
+                        <td class="w">
+                          {h.np}
+                          {h.adjusted ? <Adj /> : null}
+                        </td>
                         <td class={`l ${h.alliance === "R" ? "r" : "b"}`}>
                           <TeamLinks teams={teams} season={SEASON} />
                         </td>
@@ -235,6 +253,7 @@ homeRoutes.get("/", (c) =>
                 </tbody>
               </Table>
             )}
+            {high.some((h) => h.adjusted) && <AdjNote />}
           </Box>
 
           <Box title="Auto Leaders" more={{ href: `/seasons/${SEASON}/leaders?sort=auto`, label: "More" }}>
@@ -439,7 +458,9 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
         .bind(season),
       d
         .prepare(
-          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM ${table} s
+          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av,
+                  (SELECT MAX(ms.adjusted) FROM match_scores ms WHERE ms.match_id = s.best_np_match_id) AS np_adj
+           FROM ${table} s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT ? OFFSET ?`,
@@ -456,7 +477,9 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     if (results.length === 0 && total > 0 && page !== requested) {
       const again = await d
         .prepare(
-          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM ${table} s
+          `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av,
+                  (SELECT MAX(ms.adjusted) FROM match_scores ms WHERE ms.match_id = s.best_np_match_id) AS np_adj
+           FROM ${table} s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
            WHERE s.season = ? AND s.${col} IS NOT NULL ORDER BY s.${col} DESC LIMIT ? OFFSET ?`,
@@ -473,19 +496,34 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
       return `/seasons/${season}/leaders${s ? `?${s}` : ""}`;
     };
     const n = (v: unknown) => v as number | null;
-    const cols: { k: string; head: unknown; fmt: (x: number | null) => string | number }[] = [
-      { k: "best_opr_np", head: <Th k="Best NP" />, fmt: f1 },
-      { k: "latest_opr_np", head: <Th k="Latest NP" />, fmt: f1 },
-      { k: "best_opr_auto", head: <Th k="Auto" />, fmt: f1 },
-      { k: "best_opr_teleop", head: <Th k="TeleOp" />, fmt: f1 },
-      { k: "best_opr_endgame", head: <Th k="Endgame" />, fmt: f1 },
+    type LeaderRow = (typeof results)[number];
+    /** `adj`: the value comes from corrected scores, so it gets an asterisk. */
+    const best = (col: string) => (r: LeaderRow) => correctedStat(season, r.best_event as string | null, col);
+    const cols: {
+      k: string;
+      head: unknown;
+      fmt: (x: number | null) => string | number;
+      adj: (r: LeaderRow) => boolean;
+    }[] = [
+      { k: "best_opr_np", head: <Th k="Best NP" />, fmt: f1, adj: best("np") },
+      {
+        k: "latest_opr_np",
+        head: <Th k="Latest NP" />,
+        fmt: f1,
+        adj: (r) => correctedStat(season, r.latest_event as string | null, "np"),
+      },
+      { k: "best_opr_auto", head: <Th k="Auto" />, fmt: f1, adj: best("auto") },
+      { k: "best_opr_teleop", head: <Th k="TeleOp" />, fmt: f1, adj: best("teleop") },
+      { k: "best_opr_endgame", head: <Th k="Endgame" />, fmt: f1, adj: best("endgame") },
       ...desc.components.map((comp) => ({
         k: `best_opr_${comp.key}`,
         head: <th title={comp.tip}>{comp.label}</th>,
         fmt: comp.count ? f2 : f1,
+        adj: best(comp.key),
       })),
-      { k: "best_np", head: <Th k="Max NP" />, fmt: (x) => x ?? "" },
+      { k: "best_np", head: <Th k="Max NP" />, fmt: (x) => x ?? "", adj: (r) => !!r.np_adj },
     ];
+    const anyAdj = results.some((r) => cols.some((cl) => cl.adj(r)));
     const H = Object.fromEntries(cols.map((cl) => [cl.k, heatScale(results.map((r) => n(r[cl.k])))]));
     return c.html(
       <Layout title={`${seasonLabel(season)} ${desc.game} Leaders: ${colLabel}`}>
@@ -559,12 +597,14 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
                     {cols.map((cl) => (
                       <td class={`ht${cl.k === col ? " w" : ""}`} style={H[cl.k]?.(n(r[cl.k]))}>
                         {cl.fmt(n(r[cl.k]))}
+                        {cl.adj(r) && <Adj />}
                       </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </Table>
+            {anyAdj && <AdjNote />}
             <Pager
               page={page}
               pages={pages}

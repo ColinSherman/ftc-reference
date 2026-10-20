@@ -7,7 +7,7 @@ import type {
   FtcApi,
   TournamentLevel,
 } from "@ftcref/ftc-api";
-import { type ApiScore, getSeason, scoreColumns } from "@ftcref/seasons";
+import { type ApiScore, correctionFor, getSeason, scoreColumns } from "@ftcref/seasons";
 import type { Env } from "../env";
 import { changed, dataOf, type Tracked, trackedGet } from "../tracked";
 import { recomputeEventStats } from "./eventStats";
@@ -161,14 +161,20 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     ...(playS ? (dataOf(playS)?.matchScores ?? []) : []),
   ];
   const scoreRows: Row[] = [];
-  const toRow = (id: number, alliance: string, a: ApiScore) => ({
-    match_id: id,
-    alliance,
-    season,
-    ...scoreColumns(desc, a),
-    detail: JSON.stringify(a),
-    updated_at: now,
-  });
+  const correction = correctionFor(season, code);
+  const toRow = (id: number, alliance: string, reported: ApiScore) => {
+    const fixed = correction?.apply(reported) ?? null;
+    const a = fixed ?? reported;
+    return {
+      match_id: id,
+      alliance,
+      season,
+      ...scoreColumns(desc, a),
+      detail: JSON.stringify(a),
+      adjusted: bool(fixed != null),
+      updated_at: now,
+    };
+  };
   for (const s of scores) {
     const level = LEVEL[s.matchLevel] ?? "O";
     if ("scores" in s) {
@@ -193,6 +199,17 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
          blue_np = (SELECT np FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'B')
        WHERE season = ? AND event_code = ?`,
     ).bind(season, code),
+    // Corrected scores replace the reported finals too. Winners stay as officially recorded.
+    ...(correction
+      ? [
+          env.DB.prepare(
+            `UPDATE matches SET
+               red_score  = COALESCE((SELECT total FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'R' AND s.adjusted = 1), red_score),
+               blue_score = COALESCE((SELECT total FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'B' AND s.adjusted = 1), blue_score)
+             WHERE season = ? AND event_code = ?`,
+          ).bind(season, code),
+        ]
+      : []),
     ...teamStatements(env.DB, season, eventTeams),
     ...upsertStatements(
       env.DB,
