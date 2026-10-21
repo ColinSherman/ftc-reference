@@ -12,6 +12,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # CLOUDFLARE_API_TOKEN is an environment secret; the "production" environment only admits `main`
+    # (Settings → Environments), so no other branch can deploy production or touch its data.
+    environment:
+      name: production
+      url: https://ftc-reference.com
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: a92ff6c4b72094e5030585f2363b940a

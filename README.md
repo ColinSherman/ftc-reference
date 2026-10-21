@@ -131,8 +131,11 @@ latest push wins. A refresh discards anything a PR changed in staging data. Re-p
 its migrations and re-syncs back.
 
 **One-time setup:**
-- Repo secret `CLOUDFLARE_API_TOKEN` with Workers Scripts:Edit, D1:Edit, Workers KV:Edit, Queues:Edit and
-  Zone/DNS:Edit for ftc-reference.com.
+- GitHub Environments (Settings → Environments). `production` has deployment branches limited to
+  `main`, and `staging` allows all branches. Each holds a `CLOUDFLARE_API_TOKEN` secret (Workers
+  Scripts:Edit, D1:Edit, Workers KV:Edit, Queues:Edit, Zone/DNS:Edit for ftc-reference.com). There is no
+  repo-level copy, so only `main` can deploy production. `scripts/workflows.test.ts` fails CI if a job
+  reads the token without an environment, or if a workflow uses `pull_request_target`.
 - Repo secret `STAGE_ADMIN_TOKEN`: any random string. CI sets it as the staging sync Worker's
   `ADMIN_TOKEN` and uses it for `stage-resync`.
 - FTC API credentials for the staging sync Worker. From `apps/sync`, run
