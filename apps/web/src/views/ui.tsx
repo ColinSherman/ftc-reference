@@ -139,7 +139,15 @@ export const STAT_TIPS: Record<string, string> = {
   "Opp NP": "Opponent alliance's no-penalty score",
 };
 
+/** Marks a number that includes scores corrected from what the event reported. */
+export const Adj = () => <span title="Includes corrected scores (see the event page)">*</span>;
+
+export const AdjNote = () => (
+  <p class="note">* Includes scores corrected for an event's scoring error; may still be overstated.</p>
+);
+
 /** Header cell with a hover definition. `l` left-aligns. */
+
 export function Th(props: { k: string; l?: boolean; label?: string }) {
   return (
     <th class={props.l ? "l" : undefined} title={STAT_TIPS[props.k]}>

@@ -1,4 +1,4 @@
-import { type ApiScore, getSeason, isSeason, seasonLabel } from "@ftcref/seasons";
+import { type ApiScore, correctionFor, getSeason, isSeason, seasonLabel } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
@@ -85,7 +85,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
            WHERE mt.match_id = ? ORDER BY mt.station`,
         )
         .bind(m.id),
-      d.prepare("SELECT alliance, np, detail FROM match_scores WHERE match_id = ?").bind(m.id),
+      d.prepare("SELECT alliance, np, detail, adjusted FROM match_scores WHERE match_id = ?").bind(m.id),
       d
         .prepare(
           "SELECT video_id, start_s, title, channel_title, source FROM videos WHERE match_id = ? AND status = 'approved' ORDER BY source = 'auto_align', votes DESC, id LIMIT 6",
@@ -93,17 +93,31 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
         .bind(m.id),
     ]);
     const teams = (teamsR?.results ?? []) as TeamRow[];
-    const scores = (scoresR?.results ?? []) as { alliance: string; np: number; detail: string }[];
+    const scores = (scoresR?.results ?? []) as {
+      alliance: string;
+      np: number;
+      detail: string;
+      adjusted: number;
+    }[];
+    // Also correct at render: rows synced before the correction shipped are still as reported,
+    // and re-applying it to an already corrected row changes nothing.
+    const fix = correctionFor(season, code);
+    let corrected = scores.some((s) => s.adjusted);
     const parse = (a: string) => {
       const s = scores.find((x) => x.alliance === a);
       try {
-        return s ? (JSON.parse(s.detail) as ApiScore) : undefined;
+        if (!s) return undefined;
+        const reported = JSON.parse(s.detail) as ApiScore;
+        const fixed = fix?.apply(reported);
+        if (fixed) corrected = true;
+        return fixed ?? reported;
       } catch {
         return undefined;
       }
     };
     const red = parse("R");
     const blue = parse("B");
+    const correction = corrected ? fix : undefined;
     const videos = (videoR?.results ?? []) as {
       video_id: string;
       start_s: number | null;
@@ -120,8 +134,10 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       matchLabel(x.level, remote ? 0 : x.series, x.match_number);
 
     const Side = (props: { ally: "R" | "B" }) => {
-      const score = props.ally === "R" ? m.red_score : m.blue_score;
-      const np = props.ally === "R" ? m.red_np : m.blue_np;
+      const detail = props.ally === "R" ? red : blue;
+      const fixed = correction && detail ? desc.common(detail) : undefined;
+      const score = fixed ? fixed.total : props.ally === "R" ? m.red_score : m.blue_score;
+      const np = fixed ? fixed.np : props.ally === "R" ? m.red_np : m.blue_np;
       const cls = remote ? "rs solo" : props.ally === "R" ? "rs" : "bs";
       return (
         <div class={`${cls}${m.winner === props.ally ? " won" : ""}`}>
@@ -228,6 +244,7 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
                     </tbody>
                   </table>
                 </div>
+                {correction && <p class="note">* Corrected score. {correction.note}</p>}
                 {desc.penaltiesDeducted && (
                   <p class="note">
                     This season, penalties were deducted from the offending alliance's own score.

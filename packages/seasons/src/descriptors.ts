@@ -427,6 +427,31 @@ const decode: SeasonDescriptor = {
 };
 
 // ---------------------------------------------------------------- 2026 BIOBUZZ
+/** TeleOp HIVE points are 20 per tip plus this much per POLLEN/NECTAR left in an up-facing CELL. */
+const CELL_PIECE_PTS = 2;
+
+/**
+ * Cap the pieces counted in CELLs at `max` and take the excess off every total that includes them.
+ * The API's original count is kept as `reportedHivePollenNectar`.
+ */
+const capCellPieces =
+  (max: number) =>
+  (a: ApiScore): ApiScore | null => {
+    const reported = n(a.teleopHivePollenNectar);
+    if (reported <= max) return null;
+    const cut = (reported - max) * CELL_PIECE_PTS;
+    const less = (v: unknown) => (typeof v === "number" ? v - cut : v);
+    return {
+      ...a,
+      teleopHivePollenNectar: max,
+      teleopHivePoints: less(a.teleopHivePoints),
+      teleopPoints: less(a.teleopPoints),
+      preFoulTotal: less(a.preFoulTotal),
+      totalPoints: less(a.totalPoints),
+      reportedHivePollenNectar: reported,
+    };
+  };
+
 const biobuzz: SeasonDescriptor = {
   season: 2026,
   cmpYear: 2027,
@@ -465,7 +490,13 @@ const biobuzz: SeasonDescriptor = {
     { label: "Auto HIVE points", value: (a) => n(a.autoHivePoints) },
     { label: "Auto total", value: (a) => n(a.autoPoints), sub: true },
     { label: "TeleOp HIVE tips", value: (a) => n(a.teleopHiveTips) },
-    { label: "Pieces in CELLs", value: (a) => n(a.teleopHivePollenNectar) },
+    {
+      label: "Pieces in CELLs",
+      value: (a) =>
+        a.reportedHivePollenNectar == null
+          ? n(a.teleopHivePollenNectar)
+          : `${n(a.teleopHivePollenNectar)}* (${a.reportedHivePollenNectar} entered)`,
+    },
     { label: "HIVE points", value: (a) => n(a.teleopHivePoints) },
     { label: "FLOWER points", value: (a) => n(a.teleopFlowerPoints) },
     { label: "GARDEN pieces", value: (a) => n(a.teleopGardenPollenNectar) },
@@ -480,6 +511,16 @@ const biobuzz: SeasonDescriptor = {
     { label: "POLLINATOR 1 RP", value: (a: ApiScore) => !!a.pollinator1RP },
     { label: "POLLINATOR 2 RP", value: (a: ApiScore) => !!a.pollinator2RP },
   ],
+  corrections: {
+    // Scorekeepers counted every piece from every tip in the final CELL count, not just the pieces
+    // still in CELLs at the end. 9+ is capped at 8 (a softly placed 8th piece need not cause a tip),
+    // which may still overstate some alliances.
+    KZASN1: {
+      note: "Scorekeepers counted every piece from every tip as still in a CELL. Counts of 9 or more are capped at 8 (which may still be high) and the points rescored.",
+      affects: ["np", "total", "teleop", "c2"],
+      apply: capCellPieces(8),
+    },
+  },
 };
 
 export const SEASONS: Record<number, SeasonDescriptor> = Object.fromEntries(

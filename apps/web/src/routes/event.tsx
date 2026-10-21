@@ -1,4 +1,5 @@
 import {
+  correctionFor,
   getSeason,
   isSeason,
   OFFICIAL_KINDS,
@@ -478,6 +479,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
   const code = c.req.param("code").toUpperCase();
   return cached(c, { versions: [`event:${season}:${code}`], ttl: VERSIONED_TTL }, async () => {
     const desc = getSeason(season);
+    const correction = correctionFor(season, code);
     const d = db(c);
     const [evR, rankR, matchR, statR, allyR, awardR, teamsR, streamR] = await d.batch([
       d.prepare("SELECT * FROM events WHERE season = ? AND code = ?").bind(season, code),
@@ -678,6 +680,11 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
             <a href={`https://ftc-events.firstinspires.org/${season}/${code}`}>FIRST event page</a>
           </div>
         </div>
+        {correction && (
+          <p class="note">
+            * Scores here are corrected, not as reported. {correction.note} OPRs use the corrected scores.
+          </p>
+        )}
         <div class="sbr">
           <StatBox label="Teams" value={roster.size || ranks.length || "–"} />
           <StatBox label="Matches" value={played.length} sub={`of ${matches.length} scheduled`} />

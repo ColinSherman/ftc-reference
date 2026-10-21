@@ -37,6 +37,19 @@ export interface BreakdownRow {
   lower?: boolean;
 }
 
+/**
+ * A fix for an event whose scorekeepers entered results wrongly. Applied at ingest, so every re-sync
+ * from the API is corrected again; corrected rows are flagged and marked with an asterisk.
+ */
+export interface ScoreCorrection {
+  /** Explains the fix next to corrected scores. */
+  note: string;
+  /** Generic columns (np, total, teleop, c1..c4) the fix can change; leaderboards star only these. */
+  affects: string[];
+  /** A corrected copy of one alliance's score, or null when it needs no change. */
+  apply: (a: ApiScore) => ApiScore | null;
+}
+
 export interface SeasonDescriptor {
   /** Kickoff year, as the v2 API numbers seasons. */
   season: number;
@@ -55,6 +68,8 @@ export interface SeasonDescriptor {
   rps?: { label: string; value: (a: ApiScore) => boolean }[];
   /** 2020–21 penalties were deducted from the offender's own score rather than credited to the opponent. */
   penaltiesDeducted?: boolean;
+  /** Per-event score corrections, keyed by event code. */
+  corrections?: Record<string, ScoreCorrection>;
 }
 
 /** Coerce possibly-missing API numbers. */

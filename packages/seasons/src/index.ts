@@ -1,5 +1,5 @@
 import { SEASONS } from "./descriptors";
-import type { ApiScore, SeasonDescriptor } from "./types";
+import type { ApiScore, ScoreCorrection, SeasonDescriptor } from "./types";
 
 export { SEASONS } from "./descriptors";
 export { OFFICIAL_KINDS, officialKindIn, SEASON_KINDS, seasonKindIn } from "./official";
@@ -39,6 +39,14 @@ export function scoreColumns(d: SeasonDescriptor, a: ApiScore) {
     c4: c4 ?? 0,
   };
 }
+
+/** The score correction for one event, if its results were entered wrongly. */
+export const correctionFor = (season: number, code: string): ScoreCorrection | undefined =>
+  SEASONS[season]?.corrections?.[code];
+
+/** Whether a stat taken from this event (np, teleop, c2…) can include corrected scores. */
+export const correctedStat = (season: number, code: string | null | undefined, col: string) =>
+  code != null && !!correctionFor(season, code)?.affects.includes(col);
 
 /** Monday on or before kickoff: week 1 of the season. */
 export function firstMonday(d: SeasonDescriptor): Date {
