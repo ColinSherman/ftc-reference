@@ -89,7 +89,7 @@ channelRoutes.get("/admin/channels/:id{UC[\\w-]{22}}", async (c) => {
   return c.html(
     <Layout title={`Channel: ${ch?.title ?? id}`}>
       <h1>{ch?.title ?? id}</h1>
-      <AdminNav active="videos" />
+      <AdminNav active="videos" env={c.env.ENV_NAME} />
       <p class="sitestats">
         <a href={`https://www.youtube.com/channel/${id}`} rel="noopener">
           YouTube

@@ -81,7 +81,7 @@ mediaRoutes.get("/admin/photos", async (c) => {
   return c.html(
     <Layout title="Admin · Photos">
       <h1>Robot photos</h1>
-      <AdminNav active="photos" />
+      <AdminNav active="photos" env={c.env.ENV_NAME} />
       <div class="tabs">
         {["pending", "approved", "rejected"].map((s) =>
           s === status ? <b>{s}</b> : <a href={`?status=${s}`}>{s}</a>,

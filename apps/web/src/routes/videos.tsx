@@ -391,7 +391,7 @@ videoRoutes.get("/admin/videos", async (c) => {
   return c.html(
     <Layout title="Review videos">
       <h1>Match videos</h1>
-      <AdminNav active="videos" />
+      <AdminNav active="videos" env={c.env.ENV_NAME} />
       <div class="tabs">
         {["pending", "approved", "rejected"].map((s) =>
           s === status ? (
