@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev --test-scheduled --persist-to ../../.wrangler/state",
     "deploy": "wrangler deploy",
+    "deploy:stage": "wrangler deploy --env staging",
     "types": "wrangler types src/worker-configuration.d.ts --include-runtime=false"
   },
   "dependencies": {

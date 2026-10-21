@@ -33,8 +33,38 @@ browser pane: `resize_window` + `document.querySelectorAll('.scroll')` comparing
 - **Cloudflare account:** always the personal account `a92ff6c4b72094e5030585f2363b940a`
   (pinned in each `wrangler.jsonc`), never the Team 4201 account.
 - **Secrets** (`FTC_API_*`, `ADMIN_TOKEN`, `YOUTUBE_API_KEY`) are set by the user with
-  `wrangler secret put`; never write or echo them.
+  `wrangler secret put` (or, for staging's `ADMIN_TOKEN`, by CI from the `STAGE_ADMIN_TOKEN` repo
+  secret); never write or echo them.
 - **YouTube quota:** prefer free RSS feeds; `search.list` (100 units) only for channel discovery.
-- **Checks before deploy:** `pnpm test`, `pnpm typecheck`, `npx biome check .` must be clean.
-- **Deploy:** `wrangler deploy` from `apps/sync` and `apps/web` (D1 migrations first:
-  `wrangler d1 migrations apply ftcref --remote` from `apps/sync`).
+- **Checks before deploy:** `pnpm test`, `pnpm typecheck`, `pnpm lint` must be clean.
+
+## Environments: local → staging → production
+
+Three environments, each with its own data (README "Environments" has the full table). Rules:
+
+- **Staging never touches production resources.** Staging Workers (`ftcref-sync-stage`,
+  `ftcref-web-stage`) bind only `ftcref-stage` (D1), `ftcref-stage-cache` (KV) and `ftcref-stage-*`
+  queues, under `env.staging` in each `wrangler.jsonc`. Never copy a production id into a staging
+  block. `scripts/stage-lib.mjs` (`assertStagingIsolated`) fails CI if you do; keep it passing, and
+  extend `boundIds` if you add a new binding type (R2, etc.).
+- **New bindings go in both environments.** A new D1/KV/queue/R2 binding or var needs a production
+  entry and a separate `ftcref-stage-*` staging entry. Add creation of the staging resource to
+  `scripts/stage-resources.mjs`. `vars` and `triggers` are not inherited by `env.staging`, so set them
+  there explicitly.
+- **Production is written only by `deploy.yml` on merge to `main`.** Don't run `wrangler deploy`,
+  `d1 migrations apply ftcref --remote` or `d1 execute ftcref --remote` against production by hand or
+  from an agent. If the user approves an emergency production deploy, run "Deploy production"
+  (`deploy.yml`) on the branch. Staging scripts may only *read* production (`d1 export`).
+- **Verify on staging first.** Anything that changes stored data (ingest, scoring, corrections,
+  migrations) is previewed on stage.ftc-reference.com before merge. Put `stage-resync: 2026/CODE`
+  lines in the PR body so staging re-runs those events through the PR's sync code, then check the
+  pages there. A note on the page isn't proof; check that the numbers changed.
+- **Data fixes are code, not ad-hoc SQL.** Correct bad source data at ingest (e.g. `corrections` in
+  the season descriptor) or in a migration, so re-syncs and fresh environments get the same result.
+- **Migrations:** staging gets a PR's migrations on push, production on merge, before the new code
+  deploys. Old production code runs briefly against the new schema, so keep each migration
+  backwards-compatible: add first, drop in a later PR. A weekly refresh (`stage-seed.yml`) resets
+  staging to production, after which the next PR push re-applies that PR's migrations.
+- **Local is the contributor path.** Fork PRs get no staging deploy (no secrets). Everything must stay
+  runnable with `pnpm dev:sync` + `pnpm dev:web` + `scripts/mock-ftc-api.mjs`, with no Cloudflare
+  account or FTC API key.
