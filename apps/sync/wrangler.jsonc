@@ -58,7 +58,7 @@
   // `wrangler deploy --env staging` -> ftcref-sync-stage. Own D1, KV and queues: it must never bind a
   // production resource. No cron: staging data is a copy of production (scripts/stage-seed.mjs), and
   // events are re-synced on demand (POST /admin/sync-event, or `stage-resync:` lines in a PR body).
-  // The *_STAGE_* placeholders are filled by scripts/stage-resources.mjs; commit the real ids it prints.
+  // scripts/stage-resources.mjs creates these resources if they go missing and checks the ids below.
   // Secrets: `wrangler secret put FTC_API_USER --env staging` (and FTC_API_TOKEN). CI sets ADMIN_TOKEN.
   "env": {
     "staging": {
@@ -72,11 +72,11 @@
         {
           "binding": "DB",
           "database_name": "ftcref-stage",
-          "database_id": "__STAGE_D1_ID__",
+          "database_id": "2c5d75b6-bb63-44c3-83f6-9aaf24658a74",
           "migrations_dir": "../../packages/db/migrations"
         }
       ],
-      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "__STAGE_KV_ID__" }],
+      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "3e819b0648c04641a586463e186bbe5b" }],
       "queues": {
         "producers": [
           { "binding": "SYNC_QUEUE", "queue": "ftcref-stage-sync-jobs" },

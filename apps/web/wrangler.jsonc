@@ -39,12 +39,12 @@
         {
           "binding": "DB",
           "database_name": "ftcref-stage",
-          "database_id": "__STAGE_D1_ID__",
+          "database_id": "2c5d75b6-bb63-44c3-83f6-9aaf24658a74",
           "migrations_dir": "../../packages/db/migrations"
         }
       ],
       "version_metadata": { "binding": "CF_VERSION" },
-      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "__STAGE_KV_ID__" }]
+      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "3e819b0648c04641a586463e186bbe5b" }]
     }
   }
 }

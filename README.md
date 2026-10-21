@@ -137,8 +137,6 @@ its migrations and re-syncs back.
   `ADMIN_TOKEN` and uses it for `stage-resync`.
 - FTC API credentials for the staging sync Worker. From `apps/sync`, run
   `wrangler secret put FTC_API_USER --env staging`, then the same for `FTC_API_TOKEN`.
-- After the first staging run, commit the D1 and KV IDs that `pnpm stage:resources` printed into both
-  `apps/*/wrangler.jsonc` files, replacing `__STAGE_D1_ID__` and `__STAGE_KV_ID__`.
 
 ## Data terms
 
