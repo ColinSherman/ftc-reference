@@ -24,8 +24,9 @@
   "version_metadata": { "binding": "CF_VERSION" },
   "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }],
 
-  // `wrangler deploy --env staging` -> stage.ftc-reference.com. Separate Worker, same data: it reads the
-  // production D1/KV, so test with real events. Don't use admin/submit forms there unless you mean it.
+  // `wrangler deploy --env staging` -> stage.ftc-reference.com. Separate Worker AND separate data: it reads
+  // the staging D1/KV that ftcref-sync-stage writes (a copy of production, see scripts/stage-seed.mjs).
+  // It must never bind a production resource. Ids are shared with apps/sync's staging env.
   // Secrets are per-Worker: `wrangler secret put ADMIN_TOKEN --env staging` if you need /admin on stage.
   "env": {
     "staging": {
@@ -37,13 +38,13 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "ftcref",
-          "database_id": "dae5a37a-cc72-4231-994a-546e0300df1b",
+          "database_name": "ftcref-stage",
+          "database_id": "__STAGE_D1_ID__",
           "migrations_dir": "../../packages/db/migrations"
         }
       ],
       "version_metadata": { "binding": "CF_VERSION" },
-      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }]
+      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "__STAGE_KV_ID__" }]
     }
   }
 }

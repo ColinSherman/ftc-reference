@@ -16,7 +16,6 @@ import { planLive, recentEvents } from "./planner";
 const season = CURRENT_SEASON;
 /** The v3 API and avatar files number seasons by Championship year (BIOBUZZ 2026-27 → 2027). */
 const cmpYear = season + 1;
-const BACKFILL_QUEUE_NAME = "ftcref-backfill";
 /**
  * Backfill politeness: each consumer invocation shares one throttle across its concurrently-running
  * jobs, so ≤ 5 requests/s per consumer and ≤ 10/s overall (max_concurrency 2). Live polling is unthrottled.
@@ -181,7 +180,7 @@ export default {
   },
 
   async queue(batch, env) {
-    const bulk = batch.queue === BACKFILL_QUEUE_NAME;
+    const bulk = batch.queue === env.BACKFILL_QUEUE_NAME;
     const handle = async (m: Message<SyncMessage>, throttle?: Throttle) => {
       try {
         await runJob(env, m.body, bulk, throttle);

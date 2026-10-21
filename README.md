@@ -79,23 +79,66 @@ curl "localhost:8787/__scheduled?cron=*+*+*+*+*"     # run the per-minute planne
 6. Run `pnpm deploy`, then start the backfill: `POST /admin/backfill`, followed by `POST /admin/backfill?step=matches`.
 7. Attach a custom domain to `ftcref-web`. `caches.default` doesn't run on `*.workers.dev`, so pages aren't edge-cached until you do.
 
+## Environments
+
+Three environments, each with its own data. Nothing outside production ever writes to a production resource.
+
+| | Local | Staging | Production |
+|---|---|---|---|
+| Web | `pnpm dev:web` (:8788) | `ftcref-web-stage` → <https://stage.ftc-reference.com> | `ftcref-web` → <https://ftc-reference.com> |
+| Sync | `pnpm dev:sync` (:8787) | `ftcref-sync-stage` (no cron) | `ftcref-sync` (crons) |
+| D1 | local SQLite in `.wrangler/state` | `ftcref-stage` | `ftcref` |
+| KV / queues | local | `ftcref-stage-cache`, `ftcref-stage-*` | `CACHE_VER`, `ftcref-sync-jobs`, `ftcref-backfill`, `ftcref-sync-dlq` |
+| Data | mock API (`scripts/mock-ftc-api.mjs`) | copy of production, refreshed weekly | FTC Events API |
+| Deployed by | you | every push to a PR (`stage.yml`) | merge to `main` (`deploy.yml`) |
+| Migrations | `pnpm db:migrate:local` | the PR's migrations, on push | on merge, before the deploy |
+
+**Contributors (including forks)** only need the local setup above: no Cloudflare account and no FTC API
+key. Fork PRs can't read repo secrets, so they get no staging deploy. A maintainer can run "Deploy staging"
+from the Actions tab on the fork's branch after reading the diff.
+
 ## Production deploys
 
 Merging to `main` deploys production. The `.github/workflows/deploy.yml` workflow runs tests, typecheck
 and lint, applies D1 migrations (`pnpm db:migrate:remote`), then runs `pnpm deploy` (sync, then web).
-Deploys run one at a time and are never cancelled partway. It can also be run by hand from the Actions tab
-("Deploy production"). It uses the same `CLOUDFLARE_API_TOKEN` repo secret as staging, which also needs
-Queues:Edit for the sync Worker. If a check fails, nothing is deployed; if the web deploy fails after sync
-went out, re-run the workflow.
+Deploys run one at a time and are never cancelled partway. Run it by hand ("Deploy production" in the
+Actions tab) only for an emergency. Production migrations run while the old code is still serving, so keep
+each migration compatible with the code before it: add columns and tables first, and remove old ones in a
+later PR.
 
 ## Staging (stage.ftc-reference.com)
 
-`pnpm deploy:stage` deploys the web app as a separate Worker (`ftcref-web-stage`) on
-<https://stage.ftc-reference.com>. It reads the production D1/KV so you can test against real events; the
-sync Worker is not duplicated. The `.github/workflows/stage.yml` workflow deploys it automatically on every
-push to a pull request, after tests, typecheck and lint pass. It needs a repo secret
-`CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, D1:Edit, Workers KV:Edit, and Zone/DNS:Edit for ftc-reference.com
-on the personal account). Staging deploys come from whichever PR pushed last.
+Staging is a full copy of the stack with its own D1 (`ftcref-stage`), KV and queues, so a PR's sync code
+and migrations can be previewed against real data without touching production. The
+`.github/workflows/stage.yml` workflow runs on every push to a PR:
+
+1. Tests, typecheck and lint.
+2. `pnpm stage:resources` creates any missing staging D1/KV/queues, fills in their IDs, and fails if any
+   staging binding points at a production resource.
+3. `pnpm stage:seed --if-empty` copies production into staging if staging has no events yet. Production is
+   only exported, never written.
+4. `pnpm db:migrate:stage` applies the PR's migrations to staging only.
+5. Deploys `ftcref-sync-stage`, then `ftcref-web-stage`.
+6. Re-syncs any events listed as `stage-resync: 2026/KZASN1` lines in the PR body, using the PR's sync code.
+
+**Staging data.** The staging sync Worker has no cron, so staging doesn't poll the FTC API on its own.
+"Refresh staging data" (`stage-seed.yml`) replaces it with a fresh production copy every Monday, or on
+demand from the Actions tab. To preview a change to ingest or scoring, add `stage-resync:` lines to the PR
+body (or use the `resync` input when running "Deploy staging" by hand).
+
+**Shared and serialized.** There is one staging environment. Runs are queued (never cancelled), and the
+latest push wins. A refresh discards anything a PR changed in staging data. Re-push or re-run the PR to put
+its migrations and re-syncs back.
+
+**One-time setup:**
+- Repo secret `CLOUDFLARE_API_TOKEN` with Workers Scripts:Edit, D1:Edit, Workers KV:Edit, Queues:Edit and
+  Zone/DNS:Edit for ftc-reference.com.
+- Repo secret `STAGE_ADMIN_TOKEN`: any random string. CI sets it as the staging sync Worker's
+  `ADMIN_TOKEN` and uses it for `stage-resync`.
+- FTC API credentials for the staging sync Worker. From `apps/sync`, run
+  `wrangler secret put FTC_API_USER --env staging`, then the same for `FTC_API_TOKEN`.
+- After the first staging run, commit the D1 and KV IDs that `pnpm stage:resources` printed into both
+  `apps/*/wrangler.jsonc` files, replacing `__STAGE_D1_ID__` and `__STAGE_KV_ID__`.
 
 ## Data terms
 
