@@ -9,10 +9,13 @@
     "lint": "biome check .",
     "db:migrate:local": "pnpm --filter @ftcref/sync exec wrangler d1 migrations apply ftcref --local --persist-to ../../.wrangler/state",
     "db:migrate:remote": "pnpm --filter @ftcref/sync exec wrangler d1 migrations apply ftcref --remote",
+    "db:migrate:stage": "pnpm --filter @ftcref/sync exec wrangler d1 migrations apply ftcref-stage --remote --env staging",
     "dev:sync": "pnpm --filter @ftcref/sync dev",
     "dev:web": "pnpm --filter @ftcref/web dev",
     "deploy": "pnpm --filter @ftcref/sync deploy && pnpm --filter @ftcref/web deploy",
-    "deploy:stage": "pnpm --filter @ftcref/web deploy:stage",
+    "deploy:stage": "pnpm --filter @ftcref/sync deploy:stage && pnpm --filter @ftcref/web deploy:stage",
+    "stage:resources": "node scripts/stage-resources.mjs",
+    "stage:seed": "node scripts/stage-seed.mjs",
     "avatars:instagram": "node scripts/instagram-avatars.mjs"
   },
   "devDependencies": {

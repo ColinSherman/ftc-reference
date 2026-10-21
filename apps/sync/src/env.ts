@@ -6,6 +6,8 @@ export interface Env {
   SYNC_QUEUE: Queue<SyncMessage>;
   /** Throttled queue for historical backfills, so live polling never waits behind them. */
   BACKFILL_QUEUE: Queue<SyncMessage>;
+  /** Name of the queue BACKFILL_QUEUE sends to; differs per environment (wrangler.jsonc vars). */
+  BACKFILL_QUEUE_NAME: string;
   FTC_API_USER: string;
   FTC_API_TOKEN: string;
   ADMIN_TOKEN: string;

@@ -2,16 +2,26 @@ name: Deploy staging
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      resync:
+        description: "Events to re-sync on staging after deploy, e.g. 2026/KZASN1 2026/USCHSUBQ1"
+        required: false
 
+# Staging is one shared environment (its own D1, KV, queues and Workers, never production's).
+# Runs queue rather than cancel, so a seed or migration is never cut off halfway.
 concurrency:
   group: stage
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   stage:
     runs-on: ubuntu-latest
     # Fork PRs have no access to secrets.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: a92ff6c4b72094e5030585f2363b940a
+      HAS_STAGE_ADMIN_TOKEN: ${{ secrets.STAGE_ADMIN_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -23,13 +33,29 @@ jobs:
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm lint
-      # Staging reads the production D1, so new migrations have to land there before staging code
-      # queries the new tables. Keep migrations additive: production code runs against the same schema.
-      - run: pnpm db:migrate:remote
+      # Creates the staging D1/KV/queues if missing and checks no staging binding is a production one.
+      - run: pnpm stage:resources
+      # First run (or after the staging DB was emptied): copy production in. Production is only read.
+      - run: pnpm stage:seed --if-empty
+      # This branch's migrations land on staging only; production gets them on merge (deploy.yml).
+      - run: pnpm db:migrate:stage
+      - name: Deploy staging sync Worker
+        id: sync
+        working-directory: apps/sync
+        run: |
+          npx wrangler deploy --env staging | tee deploy.log
+          echo "url=$(grep -oE 'https://ftcref-sync-stage\.[a-z0-9-]+\.workers\.dev' deploy.log | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Set staging sync ADMIN_TOKEN
+        if: env.HAS_STAGE_ADMIN_TOKEN == 'true'
+        working-directory: apps/sync
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: a92ff6c4b72094e5030585f2363b940a
-      - run: pnpm deploy:stage
+          STAGE_ADMIN_TOKEN: ${{ secrets.STAGE_ADMIN_TOKEN }}
+        run: printf '%s' "$STAGE_ADMIN_TOKEN" | npx wrangler secret put ADMIN_TOKEN --env staging
+      - run: pnpm --filter @ftcref/web deploy:stage
+      # `stage-resync: 2026/KZASN1` lines in the PR body re-run those events through this branch's sync code.
+      - run: node scripts/stage-resync.mjs
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: a92ff6c4b72094e5030585f2363b940a
+          PR_BODY: ${{ github.event.pull_request.body }}
+          RESYNC: ${{ inputs.resync }}
+          STAGE_SYNC_URL: ${{ steps.sync.outputs.url }}
+          STAGE_ADMIN_TOKEN: ${{ secrets.STAGE_ADMIN_TOKEN }}
