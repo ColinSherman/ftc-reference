@@ -99,17 +99,25 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       detail: string;
       adjusted: number;
     }[];
-    const correction = scores.some((s) => s.adjusted) ? correctionFor(season, code) : undefined;
+    // Also correct at render: rows synced before the correction shipped are still as reported,
+    // and re-applying it to an already corrected row changes nothing.
+    const fix = correctionFor(season, code);
+    let corrected = scores.some((s) => s.adjusted);
     const parse = (a: string) => {
       const s = scores.find((x) => x.alliance === a);
       try {
-        return s ? (JSON.parse(s.detail) as ApiScore) : undefined;
+        if (!s) return undefined;
+        const reported = JSON.parse(s.detail) as ApiScore;
+        const fixed = fix?.apply(reported);
+        if (fixed) corrected = true;
+        return fixed ?? reported;
       } catch {
         return undefined;
       }
     };
     const red = parse("R");
     const blue = parse("B");
+    const correction = corrected ? fix : undefined;
     const videos = (videoR?.results ?? []) as {
       video_id: string;
       start_s: number | null;
@@ -126,8 +134,10 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
       matchLabel(x.level, remote ? 0 : x.series, x.match_number);
 
     const Side = (props: { ally: "R" | "B" }) => {
-      const score = props.ally === "R" ? m.red_score : m.blue_score;
-      const np = props.ally === "R" ? m.red_np : m.blue_np;
+      const detail = props.ally === "R" ? red : blue;
+      const fixed = correction && detail ? desc.common(detail) : undefined;
+      const score = fixed ? fixed.total : props.ally === "R" ? m.red_score : m.blue_score;
+      const np = fixed ? fixed.np : props.ally === "R" ? m.red_np : m.blue_np;
       const cls = remote ? "rs solo" : props.ally === "R" ? "rs" : "bs";
       return (
         <div class={`${cls}${m.winner === props.ally ? " won" : ""}`}>
