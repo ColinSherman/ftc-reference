@@ -53,8 +53,9 @@ Three environments, each with its own data (README "Environments" has the full t
   there explicitly.
 - **Production is written only by `deploy.yml` on merge to `main`.** Don't run `wrangler deploy`,
   `d1 migrations apply ftcref --remote` or `d1 execute ftcref --remote` against production by hand or
-  from an agent. If the user approves an emergency production deploy, run "Deploy production"
-  (`deploy.yml`) on the branch. Staging scripts may only *read* production (`d1 export`).
+  from an agent. Staging scripts may only *read* production (`d1 export`). The `production` GitHub
+  Environment only admits `main`, so an approved emergency deploy from a branch needs the owner to add
+  that branch to the environment's deployment branches first (and remove it after).
 - **Verify on staging first.** Anything that changes stored data (ingest, scoring, corrections,
   migrations) is previewed on stage.ftc-reference.com before merge. Put `stage-resync: 2026/CODE`
   lines in the PR body so staging re-runs those events through the PR's sync code, then check the
@@ -68,3 +69,18 @@ Three environments, each with its own data (README "Environments" has the full t
 - **Local is the contributor path.** Fork PRs get no staging deploy (no secrets). Everything must stay
   runnable with `pnpm dev:sync` + `pnpm dev:web` + `scripts/mock-ftc-api.mjs`, with no Cloudflare
   account or FTC API key.
+
+## GitHub Actions: secrets and untrusted code
+
+The repo is public; anyone can open a PR. These rules keep production credentials out of reach of
+untrusted code, and `scripts/workflows.test.ts` enforces them in CI:
+
+- **Never use `pull_request_target`** (or `workflow_run` acting on PR code). They run with repo
+  secrets on fork PRs. Use `pull_request`, which gives forks no secrets.
+- **Cloudflare credentials are environment secrets.** A job that reads `secrets.CLOUDFLARE_API_TOKEN`
+  must declare `environment: production` (only `deploy.yml`'s deploy job, `main` only) or
+  `environment: staging`. There is no repo-level copy of the token; don't add one.
+- **Workflow changes are security changes.** Treat edits to `.github/workflows/`, `scripts/stage-*`
+  and anything those scripts run as able to reach Cloudflare. Say so in the PR description.
+- Fork PRs are skipped by `stage.yml` (no secrets). Never weaken that `if:` to run fork code with
+  secrets; a maintainer can run "Deploy staging" by hand after reading the diff.

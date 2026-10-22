@@ -16,7 +16,10 @@ concurrency:
 jobs:
   stage:
     runs-on: ubuntu-latest
-    # Fork PRs have no access to secrets.
+    # Secrets come from the "staging" environment (any branch). Fork PRs get no secrets and are skipped.
+    environment:
+      name: staging
+      url: https://stage.ftc-reference.com
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
