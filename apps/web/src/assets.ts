@@ -126,6 +126,8 @@ form.shift{display:flex;flex-wrap:wrap;gap:3px;align-items:center}form.shift .go
 .ssel{font:12px Verdana,sans-serif;padding:1px 4px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .seasons td.g{font:15px Georgia,serif}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
+footer .fl-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:12px}
+.prose{max-width:720px;line-height:1.55}.prose li{margin:3px 0}.prose code{font-size:12px;background:var(--head);padding:0 3px}
 @media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:22px}tr.mhide{display:none}}
 `.replace(/\n/g, "");
 
