@@ -7,6 +7,7 @@ import { avatarRoutes } from "./routes/avatar";
 import { channelRoutes } from "./routes/channels";
 import { eventRoutes } from "./routes/event";
 import { homeRoutes } from "./routes/home";
+import { legalRoutes } from "./routes/legal";
 import { matchRoutes } from "./routes/match";
 import { mediaRoutes } from "./routes/media";
 import { teamRoutes } from "./routes/team";
@@ -61,6 +62,7 @@ app.route("/events", matchRoutes);
 app.route("/", adminRoutes);
 app.route("/", channelRoutes);
 app.route("/", videoRoutes);
+app.route("/", legalRoutes);
 app.route("/", homeRoutes);
 
 app.notFound((c) =>

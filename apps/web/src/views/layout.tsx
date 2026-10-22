@@ -49,6 +49,12 @@ export function Layout(props: { title: string; description?: string; children: C
           Data from the{" "}
           <a href="https://ftc-events.firstinspires.org/services/API">FIRST Tech Challenge Events API</a>.
           Non-commercial fan site; not affiliated with <i>FIRST</i>®. Stats recomputed as results post.
+          <nav class="fl-links">
+            <a href="/contact">Contact</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+            <a href="https://github.com/ColinSherman/ftc-reference">GitHub</a>
+          </nav>
         </footer>
         <script>{raw(SORT_JS + THEME_TOGGLE_JS)}</script>
       </body>
