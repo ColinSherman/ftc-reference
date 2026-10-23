@@ -10,6 +10,7 @@ import { homeRoutes } from "./routes/home";
 import { legalRoutes } from "./routes/legal";
 import { matchRoutes } from "./routes/match";
 import { mediaRoutes } from "./routes/media";
+import { seoRoutes } from "./routes/seo";
 import { teamRoutes } from "./routes/team";
 import { videoRoutes } from "./routes/videos";
 import { Layout } from "./views/layout";
@@ -55,6 +56,7 @@ app.get("/favicon.svg", favicon);
 app.get("/favicon.ico", favicon);
 
 app.route("/a", avatarRoutes);
+app.route("/", seoRoutes);
 app.route("/", mediaRoutes);
 app.route("/teams", teamRoutes);
 app.route("/events", eventRoutes);
