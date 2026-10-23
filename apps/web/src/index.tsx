@@ -13,6 +13,7 @@ import { mediaRoutes } from "./routes/media";
 import { seoRoutes } from "./routes/seo";
 import { teamRoutes } from "./routes/team";
 import { videoRoutes } from "./routes/videos";
+import { seoHead } from "./seoTags";
 import { Layout } from "./views/layout";
 
 const app = new Hono<{ Bindings: Env }>({ strict: false });
@@ -25,6 +26,32 @@ app.use("*", async (c, next) => {
     return c.redirect(url.toString(), 301);
   }
   await next();
+});
+
+// Canonical URL and indexability. Done here (not in Layout) so every page gets it, cached or not.
+app.use("*", async (c, next) => {
+  await next();
+  if (c.req.method !== "GET") return;
+  const ct = c.res.headers.get("Content-Type") ?? "";
+  const url = new URL(c.req.url);
+  if (!ct.startsWith("text/html")) return;
+  const { canonical, noindex } = seoHead(url, c.res.status);
+  let res = c.res;
+  if (canonical) {
+    const tags = `<link rel="canonical" href="${canonical}"><meta property="og:url" content="${canonical}">`;
+    res = new HTMLRewriter()
+      .on("head", {
+        element(el) {
+          el.append(tags, { html: true });
+        },
+      })
+      .transform(res);
+  }
+  if (noindex) {
+    res = new Response(res.body, res);
+    res.headers.set("X-Robots-Tag", "noindex, follow");
+  }
+  c.res = res;
 });
 
 // `?stats=` and `?per=` remember a viewer's choice, then return to the clean URL.
