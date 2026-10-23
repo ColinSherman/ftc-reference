@@ -20,6 +20,7 @@ import {
   Box,
   eventStatus,
   heatScale,
+  OverHead,
   SeasonSelect,
   StatusPill,
   TeamLinks,
@@ -499,29 +500,34 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     type LeaderRow = (typeof results)[number];
     /** `adj`: the value comes from corrected scores, so it gets an asterisk. */
     const best = (col: string) => (r: LeaderRow) => correctedStat(season, r.best_event as string | null, col);
+    const pts = "Points added per match (OPR)";
+    /** `g`: the over-header group. */
     const cols: {
       k: string;
+      g: string;
       head: unknown;
       fmt: (x: number | null) => string | number;
       adj: (r: LeaderRow) => boolean;
     }[] = [
-      { k: "best_opr_np", head: <Th k="Best NP" />, fmt: f1, adj: best("np") },
+      { k: "best_opr_np", g: pts, head: <Th k="Best NP" />, fmt: f1, adj: best("np") },
       {
         k: "latest_opr_np",
+        g: pts,
         head: <Th k="Latest NP" />,
         fmt: f1,
         adj: (r) => correctedStat(season, r.latest_event as string | null, "np"),
       },
-      { k: "best_opr_auto", head: <Th k="Auto" />, fmt: f1, adj: best("auto") },
-      { k: "best_opr_teleop", head: <Th k="TeleOp" />, fmt: f1, adj: best("teleop") },
-      { k: "best_opr_endgame", head: <Th k="Endgame" />, fmt: f1, adj: best("endgame") },
+      { k: "best_opr_auto", g: pts, head: <Th k="Auto" />, fmt: f1, adj: best("auto") },
+      { k: "best_opr_teleop", g: pts, head: <Th k="TeleOp" />, fmt: f1, adj: best("teleop") },
+      { k: "best_opr_endgame", g: pts, head: <Th k="Endgame" />, fmt: f1, adj: best("endgame") },
       ...desc.components.map((comp) => ({
         k: `best_opr_${comp.key}`,
+        g: `${desc.game} scoring (OPR)`,
         head: <th title={comp.tip}>{comp.label}</th>,
         fmt: comp.count ? f2 : f1,
         adj: best(comp.key),
       })),
-      { k: "best_np", head: <Th k="Max NP" />, fmt: (x) => x ?? "", adj: (r) => !!r.np_adj },
+      { k: "best_np", g: "", head: <Th k="Max NP" />, fmt: (x) => x ?? "", adj: (r) => !!r.np_adj },
     ];
     const anyAdj = results.some((r) => cols.some((cl) => cl.adj(r)));
     const H = Object.fromEntries(cols.map((cl) => [cl.k, heatScale(results.map((r) => n(r[cl.k])))]));
@@ -569,6 +575,7 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
             />
             <Table>
               <thead>
+                <OverHead lead={4} groups={cols.map((cl) => cl.g)} />
                 <tr>
                   <th>#</th>
                   <th class="l">Team</th>

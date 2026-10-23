@@ -126,6 +126,7 @@ a.mark.res{color:var(--win)}a.mark.vid{color:var(--red)}a.mark:hover{color:var(-
 .st a.tn b.num{color:var(--link);font-weight:normal;margin-right:2px}.st .sub.ind{margin-left:26px}
 .st thead th,.st tr.thead th{white-space:normal;vertical-align:bottom;line-height:1.15}
 .st tr.thead th{position:static;cursor:default;border-top:1px solid var(--frame);border-bottom:1px solid var(--frame)}
+.st tr.over th{text-align:center;vertical-align:bottom;cursor:default;border:1px solid var(--frame)}.st tr.over th.sp{background:none;border-color:transparent transparent var(--frame)}
 .hs{font-size:11px;font-weight:bold;white-space:nowrap}.hs-ok{color:var(--win)}.hs-warn{color:var(--pollen)}.hs-fail{color:var(--red)}.hs-info{color:var(--muted)}
 .tabs .pill{align-self:center;text-transform:uppercase;font-weight:bold}.env-staging{color:#fff;background:var(--pollen);border-color:var(--pollen)}.env-production{color:#fff;background:var(--red);border-color:var(--red)}
 .meter{display:inline-block;width:140px;height:8px;background:var(--head);border:1px solid var(--line);vertical-align:middle;margin-right:6px}.meter span{display:block;height:100%;background:var(--rule)}
@@ -152,7 +153,7 @@ var h=t.tHead&&t.tHead.rows[t.tHead.rows.length-1];if(!h)return;
 for(var i=20;i<rows.length-4;i+=20){var c=h.cloneNode(true);c.className="thead";c.setAttribute("aria-hidden","true");
 [].forEach.call(c.cells,function(x){delete x.dataset.dir;x.removeAttribute("id")});b.insertBefore(c,rows[i])}})}
 [].forEach.call(document.querySelectorAll("table.st"),rh);
-document.addEventListener("click",function(e){var h=e.target.closest(".st thead th");if(!h)return;
+document.addEventListener("click",function(e){var h=e.target.closest(".st thead tr:not(.over) th");if(!h)return;
 var t=h.closest("table");var i=[].indexOf.call(h.parentNode.children,h);
 var asc=h.dataset.dir==="desc";[].forEach.call(h.parentNode.children,function(x){delete x.dataset.dir});h.dataset.dir=asc?"asc":"desc";
 var v=function(r){var c=r.children[i];if(!c)return"";var s=c.dataset.v!=null?c.dataset.v:c.textContent.trim();var n=parseFloat(s.replace(/,/g,""));return isNaN(n)?s.toLowerCase():n};
