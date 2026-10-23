@@ -21,6 +21,7 @@ export type SyncMessage =
   | { job: "events"; season: number }
   | { job: "teams"; season: number; page: number; force?: boolean }
   | { job: "eventMatches"; season: number; code: string; force?: boolean }
+  | { job: "eventTeams"; season: number; code: string; force?: boolean }
   | { job: "awards"; season: number; code: string; force?: boolean }
   | { job: "leagues"; season: number }
   | { job: "leagueMembers"; season: number; region: string; code: string }
