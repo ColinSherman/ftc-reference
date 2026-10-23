@@ -5,9 +5,9 @@ import { db, type Env } from "../env";
 
 export const seoRoutes = new Hono<{ Bindings: Env }>();
 
-/** Seasons listed in the sitemaps: the current one and the two before it. */
+/** Seasons listed in the sitemap: the current one and the two before it. */
 const SITEMAP_SEASONS = 3;
-/** Protocol limit per sitemap file; the index below keeps events and teams in separate files. */
+/** Protocol limit per sitemap file. We are far below it (~23k); past it this needs a sitemap index. */
 const MAX_URLS = 50_000;
 const TTL = 3600;
 
@@ -30,45 +30,30 @@ const urlset = (urls: { loc: string; lastmod?: string }[]) =>
 seoRoutes.get("/sitemap.xml", (c) =>
   cached(c, { ttl: TTL }, async () => {
     const origin = new URL(c.req.url).origin;
-    return xml(
-      `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${["events", "teams"]
-        .map((k) => `<sitemap><loc>${origin}/sitemap-${k}.xml</loc></sitemap>`)
-        .join("")}</sitemapindex>`,
-    );
-  }),
-);
-
-seoRoutes.get("/sitemap-events.xml", (c) =>
-  cached(c, { ttl: TTL }, async () => {
-    const origin = new URL(c.req.url).origin;
+    const d = db(c);
     // Event pages stop changing once results are final, so the end date is an honest lastmod.
     // (`events.updated_at` is rewritten by every six-hourly sync, so it says nothing.)
     const today = new Date().toISOString().slice(0, 10);
-    const { results } = await db(c)
-      .prepare(
-        "SELECT season, code, date_end FROM events WHERE published = 1 AND season > ? ORDER BY season DESC, date_start DESC, code LIMIT ?",
-      )
-      .bind(CURRENT_SEASON - SITEMAP_SEASONS, MAX_URLS)
-      .all<{ season: number; code: string; date_end: string }>();
-    return urlset(
-      results.map((e) => {
-        const end = e.date_end.slice(0, 10);
-        return {
-          loc: `${origin}/events/${e.season}/${encodeURIComponent(e.code)}`,
-          lastmod: end < today ? end : today,
-        };
-      }),
-    );
-  }),
-);
-
-seoRoutes.get("/sitemap-teams.xml", (c) =>
-  cached(c, { ttl: TTL }, async () => {
-    const origin = new URL(c.req.url).origin;
-    const { results } = await db(c)
-      .prepare("SELECT DISTINCT number FROM team_seasons WHERE season > ? ORDER BY number LIMIT ?")
-      .bind(CURRENT_SEASON - SITEMAP_SEASONS, MAX_URLS)
-      .all<{ number: number }>();
-    return urlset(results.map((t) => ({ loc: `${origin}/teams/${t.number}` })));
+    const [evR, teamR] = await d.batch([
+      d
+        .prepare(
+          "SELECT season, code, date_end FROM events WHERE published = 1 AND season > ? ORDER BY season DESC, date_start DESC, code LIMIT ?",
+        )
+        .bind(CURRENT_SEASON - SITEMAP_SEASONS, MAX_URLS),
+      d
+        .prepare("SELECT DISTINCT number FROM team_seasons WHERE season > ? ORDER BY number LIMIT ?")
+        .bind(CURRENT_SEASON - SITEMAP_SEASONS, MAX_URLS),
+    ]);
+    const events = ((evR?.results ?? []) as { season: number; code: string; date_end: string }[]).map((e) => {
+      const end = e.date_end.slice(0, 10);
+      return {
+        loc: `${origin}/events/${e.season}/${encodeURIComponent(e.code)}`,
+        lastmod: end < today ? end : today,
+      };
+    });
+    const teams = ((teamR?.results ?? []) as { number: number }[]).map((t) => ({
+      loc: `${origin}/teams/${t.number}`,
+    }));
+    return urlset([...events, ...teams].slice(0, MAX_URLS));
   }),
 );
