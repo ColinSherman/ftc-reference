@@ -45,7 +45,7 @@ export function eventMeta(
   return {
     title: `${ev.name} ${seasonName} ${game} Results`,
     description: clip(
-      `${ev.name} (${kind})${where ? ` in ${where}` : ""}, ${range(ev.date_start, ev.date_end)}. ${status}: rankings, match results, OPR and awards for the ${seasonName} ${game} season.`,
+      `${ev.name} (${kind})${where ? ` in ${where}` : ""}, ${range(ev.date_start, ev.date_end)}. ${status}. Rankings, results, OPR and awards.`,
     ),
   };
 }
@@ -80,7 +80,7 @@ export function teamMeta(
   return {
     title: `FTC Team ${t.number}${name}${where ? ` – ${where}` : ""}`,
     description: clip(
-      `FTC Team ${t.number}${name}${where ? ` from ${where}` : ""}${t.rookie_year ? `, rookie year ${t.rookie_year}` : ""}.${rec} OPR, records, match results and awards across ${seasons} season${seasons === 1 ? "" : "s"}.`,
+      `FTC Team ${t.number}${name}${where ? ` from ${where}` : ""}${t.rookie_year ? `, rookie year ${t.rookie_year}` : ""}.${rec} Stats for ${seasons} season${seasons === 1 ? "" : "s"}.`,
     ),
   };
 }

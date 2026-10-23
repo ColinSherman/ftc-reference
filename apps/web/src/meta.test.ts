@@ -69,7 +69,7 @@ describe("teamMeta", () => {
       null,
     );
     expect(m.title).toBe("FTC Team 4201");
-    expect(m.description).toContain("1 season.");
+    expect(m.description).toContain("Stats for 1 season.");
   });
 });
 
