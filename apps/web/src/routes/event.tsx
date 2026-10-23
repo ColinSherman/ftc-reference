@@ -21,6 +21,7 @@ import {
   CompTh,
   eventStatus,
   heatScale,
+  OverHead,
   SeasonSelect,
   StatBox,
   StatusPill,
@@ -599,25 +600,35 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
     const status = eventStatus(ev.date_start, ev.date_end);
 
     const rankHeat = heatScale(ranks.map((r) => r.opr_np));
-    type Col = { k: string; head: unknown; fmt: (x: number | null) => string | number; invert?: boolean };
+    /** `g`: the over-header group. Remote events have no OPR, only per-team averages. */
+    type Col = {
+      k: string;
+      g: string;
+      head: unknown;
+      fmt: (x: number | null) => string | number;
+      invert?: boolean;
+    };
+    const pts = remote ? "Points per match" : "Points added per match (OPR)";
+    const elems = remote ? `${desc.game} scoring` : `${desc.game} scoring (OPR)`;
     const statCols: Col[] = [
-      { k: "opr_np", head: <Th k="NP OPR" label={remote ? "Avg NP" : "NP OPR"} />, fmt: f1 },
-      { k: "opr_auto", head: <Th k="Auto" />, fmt: f1 },
-      { k: "opr_teleop", head: <Th k="TeleOp" />, fmt: f1 },
-      { k: "opr_endgame", head: <Th k="Endgame" />, fmt: f1 },
+      { k: "opr_np", g: pts, head: <Th k="NP OPR" label={remote ? "Avg NP" : "NP OPR"} />, fmt: f1 },
+      { k: "opr_auto", g: pts, head: <Th k="Auto" />, fmt: f1 },
+      { k: "opr_teleop", g: pts, head: <Th k="TeleOp" />, fmt: f1 },
+      { k: "opr_endgame", g: pts, head: <Th k="Endgame" />, fmt: f1 },
       ...desc.components.map((comp) => ({
         k: `opr_${comp.key}`,
+        g: elems,
         head: <CompTh c={comp} />,
         fmt: comp.count ? f2 : f1,
       })),
       ...(remote
         ? []
         : [
-            { k: "dpr", head: <Th k="DPR" />, fmt: f1, invert: true },
-            { k: "ccwm", head: <Th k="CCWM" />, fmt: f1 },
+            { k: "dpr", g: "Defense", head: <Th k="DPR" />, fmt: f1, invert: true },
+            { k: "ccwm", g: "Defense", head: <Th k="CCWM" />, fmt: f1 },
           ]),
-      { k: "avg_np", head: <Th k="Avg NP" />, fmt: f1 },
-      { k: "max_np", head: <Th k="Max NP" />, fmt: (x) => x ?? "" },
+      { k: "avg_np", g: "Alliance score", head: <Th k="Avg NP" />, fmt: f1 },
+      { k: "max_np", g: "Alliance score", head: <Th k="Max NP" />, fmt: (x) => x ?? "" },
     ];
     const heats = Object.fromEntries(
       statCols.map((s) => [
@@ -836,6 +847,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
             </p>
             <Table>
               <thead>
+                <OverHead lead={remote ? 1 : 2} groups={statCols.map((s) => s.g)} />
                 <tr>
                   <th class="l">Team</th>
                   {!remote && <Th k="W-L-T" />}

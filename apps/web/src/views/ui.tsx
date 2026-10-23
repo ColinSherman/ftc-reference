@@ -1,6 +1,7 @@
 import { ALL_SEASONS, type Component, SEASONS, seasonLabel } from "@ftcref/seasons";
 import type { Child } from "hono/jsx";
 import { flagCode, placeTitle } from "../flags";
+import { overRuns } from "../overhead";
 
 /**
  * Team avatar tile. Images are FIRST's 40×40 PNGs served from our own domain with immutable
@@ -153,6 +154,19 @@ export function Th(props: { k: string; l?: boolean; label?: string }) {
     <th class={props.l ? "l" : undefined} title={STAT_TIPS[props.k]}>
       {props.label ?? props.k}
     </th>
+  );
+}
+
+/** Sports-Reference-style grouping row above a table's column headers (see `overRuns`). */
+export function OverHead(props: { lead: number; groups: string[] }) {
+  return (
+    <tr class="over">
+      {overRuns(props.lead, props.groups).map(([g, n]) => (
+        <th colspan={n} class={g ? undefined : "sp"}>
+          {g}
+        </th>
+      ))}
+    </tr>
   );
 }
 
