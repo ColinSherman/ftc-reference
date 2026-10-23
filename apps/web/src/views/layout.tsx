@@ -10,68 +10,77 @@ export function Layout(props: {
   jsonLd?: Record<string, unknown>;
   children: Child;
 }) {
+  // The doctype keeps browsers out of quirks mode, where tables don't inherit font size or color.
   return (
-    <html lang="en">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>{props.title} | FTC-Reference</title>
-        {props.description && <meta name="description" content={props.description} />}
-        <meta property="og:site_name" content="FTC-Reference" />
-        <meta property="og:type" content="website" />
-        <meta property="og:title" content={`${props.title} | FTC-Reference`} />
-        {props.description && <meta property="og:description" content={props.description} />}
-        <meta name="twitter:card" content="summary" />
-        {props.jsonLd && <script type="application/ld+json">{raw(ldScript(props.jsonLd))}</script>}
-        <link rel="icon" type="image/svg+xml" href={FAVICON_DATA_URI} />
-        <script>{raw(THEME_HEAD_JS)}</script>
-        <style>{raw(CSS)}</style>
-      </head>
-      <body>
-        <div class="top">
-          <div class="in">
-            <a class="logo" href="/">
-              FTC<b>·</b>Reference
-            </a>
-            <nav>
-              <a href="/events/2026">Events</a>
-              <a href="/seasons/2026/leaders">Leaders</a>
-              <a href="/seasons">Seasons</a>
-            </nav>
-            <form action="/search">
-              <input name="q" type="search" placeholder="Search teams, events…  ( / )" aria-label="Search" />
-            </form>
-            <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
-              ◐ Auto
-            </button>
-            <a
-              id="os"
-              class="os"
-              href="?stats=all"
-              role="switch"
-              aria-checked="false"
-              title="Off-season events are left out of records and leaderboards"
-            >
-              Off-season
-              <i />
-            </a>
+    <>
+      {raw("<!doctype html>")}
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>{props.title} | FTC-Reference</title>
+          {props.description && <meta name="description" content={props.description} />}
+          <meta property="og:site_name" content="FTC-Reference" />
+          <meta property="og:type" content="website" />
+          <meta property="og:title" content={`${props.title} | FTC-Reference`} />
+          {props.description && <meta property="og:description" content={props.description} />}
+          <meta name="twitter:card" content="summary" />
+          {props.jsonLd && <script type="application/ld+json">{raw(ldScript(props.jsonLd))}</script>}
+          <link rel="icon" type="image/svg+xml" href={FAVICON_DATA_URI} />
+          <script>{raw(THEME_HEAD_JS)}</script>
+          <style>{raw(CSS)}</style>
+        </head>
+        <body>
+          <div class="top">
+            <div class="in">
+              <a class="logo" href="/">
+                FTC<b>·</b>Reference
+              </a>
+              <nav>
+                <a href="/events/2026">Events</a>
+                <a href="/seasons/2026/leaders">Leaders</a>
+                <a href="/seasons">Seasons</a>
+              </nav>
+              <form action="/search">
+                <input
+                  name="q"
+                  type="search"
+                  placeholder="Search teams, events…  ( / )"
+                  aria-label="Search"
+                />
+              </form>
+              <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
+                ◐ Auto
+              </button>
+              <a
+                id="os"
+                class="os"
+                href="?stats=all"
+                role="switch"
+                aria-checked="false"
+                title="Off-season events are left out of records and leaderboards"
+              >
+                Off-season
+                <i />
+              </a>
+            </div>
           </div>
-        </div>
-        <main>{props.children}</main>
-        <footer>
-          Data from the{" "}
-          <a href="https://ftc-events.firstinspires.org/services/API">FIRST Tech Challenge Events API</a>.
-          Non-commercial fan site; not affiliated with <i>FIRST</i>®. Stats recomputed as results post.
-          <nav class="fl-links">
-            <a href="/contact">Contact</a>
-            <a href="/privacy">Privacy</a>
-            <a href="/terms">Terms</a>
-            <a href="https://github.com/ColinSherman/ftc-reference">GitHub</a>
-          </nav>
-        </footer>
-        <script>{raw(SORT_JS + THEME_TOGGLE_JS)}</script>
-      </body>
-    </html>
+          <main>{props.children}</main>
+          <footer>
+            Data from the{" "}
+            <a href="https://ftc-events.firstinspires.org/services/API">FIRST Tech Challenge Events API</a>.
+            Non-commercial fan site; not affiliated with <i>FIRST</i>®. Stats recomputed as results post.
+            <nav class="fl-links">
+              <a href="/contact">Contact</a>
+              <a href="/privacy">Privacy</a>
+              <a href="/terms">Terms</a>
+              <a href="https://github.com/ColinSherman/ftc-reference">GitHub</a>
+            </nav>
+          </footer>
+          <script>{raw(SORT_JS + THEME_TOGGLE_JS)}</script>
+        </body>
+      </html>
+    </>
   );
 }
 
