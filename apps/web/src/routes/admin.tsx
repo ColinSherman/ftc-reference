@@ -94,9 +94,12 @@ adminRoutes.get("/admin", async (c) => {
 });
 
 async function overview(c: AppContext) {
-  const db = c.env.DB;
+  // Read session: with D1 read replication these run on a replica, not the primary the site writes to.
+  const db = c.env.DB.withSession("first-unconstrained");
   const since24 = new Date(Date.now() - 24 * HOUR).toISOString();
   const since1 = new Date(Date.now() - HOUR).toISOString();
+  const since3d = new Date(Date.now() - 72 * HOUR).toISOString();
+  const since7d = new Date(Date.now() - 168 * HOUR).toISOString();
   const today = new Date().toISOString().slice(0, 10);
   const day = pacificDay();
   const cmpYear = CURRENT_SEASON + 1;
@@ -145,7 +148,11 @@ async function overview(c: AppContext) {
        WHERE error IS NOT NULL AND job IN ('events','teams','eventMatches','awards','leagues','leagueMembers')
        ORDER BY id DESC LIMIT 1`,
     ),
-    db.prepare("SELECT MAX(started_at) AS t FROM sync_runs WHERE job = 'teams' AND target NOT LIKE '~%'"),
+    db
+      .prepare(
+        "SELECT MAX(started_at) AS t FROM sync_runs WHERE started_at > ? AND job = 'teams' AND target NOT LIKE '~%'",
+      )
+      .bind(since3d),
     db.prepare("SELECT year, backfill_stage, backfilled_at FROM seasons ORDER BY year DESC"),
     db
       .prepare(
@@ -154,9 +161,11 @@ async function overview(c: AppContext) {
       .bind(`avatars/${cmpYear}.css`),
     db.prepare("SELECT * FROM api_usage WHERE day = ?").bind(day),
     db.prepare("SELECT * FROM api_usage WHERE day >= date(?, '-6 days') ORDER BY day DESC, api").bind(day),
-    db.prepare(
-      "SELECT job, MAX(started_at) AS t FROM sync_runs WHERE job IN ('videoScan','streamAlign','avatars') GROUP BY job",
-    ),
+    db
+      .prepare(
+        "SELECT job, MAX(started_at) AS t FROM sync_runs WHERE started_at > ? AND job IN ('videoScan','streamAlign','avatars') GROUP BY job",
+      )
+      .bind(since7d),
     db.prepare(
       "SELECT started_at, rows_written, substr(error,1,200) AS error FROM sync_runs WHERE job = 'videoScan' ORDER BY id DESC LIMIT 1",
     ),
@@ -181,10 +190,15 @@ async function overview(c: AppContext) {
       .bind(since24),
     db
       .prepare(
-        `SELECT r.target, MAX(r.started_at) AS t, SUM(r.rows_written) AS rows, e.name
-         FROM sync_runs r LEFT JOIN events e ON r.target = e.season || '/' || e.code
-         WHERE r.job = 'eventMatches' AND r.target NOT LIKE '~%' AND r.rows_written > 0 AND r.started_at > ?
-         GROUP BY r.target ORDER BY t DESC LIMIT 20`,
+        // Aggregate first, then join the 20 targets on events' primary key. Joining every run on
+        // `season || '/' || code` can't use an index and took ~1 min on two weeks of runs.
+        `WITH u AS (
+           SELECT target, MAX(started_at) AS t, SUM(rows_written) AS rows FROM sync_runs
+           WHERE started_at > ? AND job = 'eventMatches' AND target NOT LIKE '~%' AND rows_written > 0
+           GROUP BY target ORDER BY t DESC LIMIT 20)
+         SELECT u.target, u.t, u.rows, e.name FROM u
+         LEFT JOIN events e ON e.season = CAST(substr(u.target, 1, 4) AS INTEGER) AND e.code = substr(u.target, 6)
+         ORDER BY u.t DESC`,
       )
       .bind(since24),
     db.prepare(
@@ -712,7 +726,9 @@ adminRoutes.get("/admin/runs", async (c) => {
     c.env.DB.prepare(
       `SELECT * FROM sync_runs ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT 200`,
     ).bind(...args),
-    c.env.DB.prepare("SELECT DISTINCT job FROM sync_runs ORDER BY job"),
+    c.env.DB.prepare("SELECT DISTINCT job FROM sync_runs WHERE started_at > ? ORDER BY job").bind(
+      new Date(Date.now() - 168 * HOUR).toISOString(),
+    ),
   ]);
   const runs = (runsR?.results ?? []) as {
     id: number;

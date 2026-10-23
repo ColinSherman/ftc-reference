@@ -37,6 +37,12 @@ browser pane: `resize_window` + `document.querySelectorAll('.scroll')` comparing
   secret); never write or echo them.
 - **YouTube quota:** prefer free RSS feeds; `search.list` (100 units) only for channel discovery.
 - **Checks before deploy:** `pnpm test`, `pnpm typecheck`, `pnpm lint` must be clean.
+- **D1 is shared by every page.** One slow query (admin pages included) holds up the public site, so
+  queries on big tables (`sync_runs`, `match_scores`, `matches`, `videos`) must use an index. Bound
+  `sync_runs` by `started_at` (its only index); join on real columns, never on computed strings like
+  `season || '/' || code`; avoid per-row correlated subqueries over a whole table. Staging and local
+  data are too small to show the problem, so time new queries against production-sized data (e.g. a
+  scratch SQLite with ~700k `sync_runs` rows) before merging.
 
 ## Environments: local → staging → production
 
