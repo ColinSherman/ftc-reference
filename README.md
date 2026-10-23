@@ -32,7 +32,19 @@ The FTC API has no webhooks, so we poll, and poll cheaply.
 - Otherwise it fetches scores, rankings, teams and alliances, upserts everything, recomputes OPR and stats for the event, then bumps `event:{season}:{code}` in KV.
 - `Last-Modified` values are saved only after the data is written, so a failed write gets retried.
 
-**Observability:** `GET /admin/runs` on the sync Worker shows the last 100 jobs: requests made, 304 count, rows written and time taken.
+**Observability:** log in at `/admin` (on either environment) with that Worker's `ADMIN_TOKEN`. The
+tag next to the tabs shows which environment you're on (PRODUCTION / STAGING / LOCAL).
+- **Health:** live polling freshness, FTC API errors, *FTC API credentials* (red when the newest
+  401/403 is more recent than the last accepted request), *Repeated failures* (jobs that failed 3+ times
+  in a row; 6 means retries are used up and the job is likely in the dead-letter queue), the daily
+  re-sync, backfill, avatars and YouTube quota.
+- **Re-sync an event:** queues a forced `eventMatches` + `awards` job for one event code, then opens the
+  sync log filtered to it.
+- **`/admin/runs`:** the last 200 jobs, filterable by job, event (`?target=2026/KZASN1`), queue and
+  errors.
+
+The sync Worker also serves JSON at `/admin/status` and `/admin/runs` (bearer token), and
+`npx wrangler tail [--env staging]` from `apps/sync` streams its live logs.
 
 ## Seasons and backfill
 

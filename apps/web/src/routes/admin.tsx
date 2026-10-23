@@ -1,4 +1,4 @@
-import { CURRENT_SEASON, seasonLabel } from "@ftcref/seasons";
+import { ALL_SEASONS, CURRENT_SEASON, isSeason, seasonLabel } from "@ftcref/seasons";
 import { pacificDay } from "@ftcref/videos";
 import { Hono } from "hono";
 import type { Child } from "hono/jsx";
@@ -16,7 +16,12 @@ const HOUR = 60 * MIN;
 
 type Status = "ok" | "warn" | "fail" | "info";
 
-export function AdminNav(props: { active: "overview" | "videos" | "photos" | "runs" }) {
+/** FTC Events API jobs: their errors are what a bad FTC_API_* secret shows up as. */
+const FTC_JOBS = "('events','teams','eventMatches','awards','leagues','leagueMembers')";
+/** Queue retries (wrangler.jsonc max_retries 5): this many failed attempts in a row exhausts them. */
+const ATTEMPTS = 6;
+
+export function AdminNav(props: { active: "overview" | "videos" | "photos" | "runs"; env?: string }) {
   const link = (k: typeof props.active, href: string, label: string) =>
     props.active === k ? <b>{label}</b> : <a href={href}>{label}</a>;
   return (
@@ -25,6 +30,9 @@ export function AdminNav(props: { active: "overview" | "videos" | "photos" | "ru
       {link("videos", "/admin/videos", "Videos")}
       {link("photos", "/admin/photos", "Photos")}
       {link("runs", "/admin/runs", "Sync log")}
+      <span class={`pill env-${props.env ?? "local"}`} title="Which deployment's data you are looking at">
+        {props.env ?? "local"}
+      </span>
       <form method="post" action="/admin/logout" style="margin-left:auto">
         <button type="submit" class="go">
           Log out
@@ -113,6 +121,9 @@ async function overview(c: AppContext) {
     updatedR,
     videosR,
     errorsR,
+    ftcOkR,
+    ftcAuthR,
+    stuckR,
   ] = await db.batch([
     db
       .prepare(
@@ -187,6 +198,25 @@ async function overview(c: AppContext) {
          WHERE error IS NOT NULL AND started_at > ? ORDER BY id DESC LIMIT 12`,
       )
       .bind(since24),
+    db.prepare(
+      `SELECT MAX(started_at) AS t FROM sync_runs WHERE job IN ${FTC_JOBS} AND requests > 0 AND error IS NULL`,
+    ),
+    db.prepare(
+      `SELECT started_at, job, target, substr(error, 1, 200) AS error FROM sync_runs
+       WHERE job IN ${FTC_JOBS} AND (error LIKE 'FTC API 401 %' OR error LIKE 'FTC API 403 %')
+       ORDER BY id DESC LIMIT 1`,
+    ),
+    // Targets whose every run since their last success (in the last day) failed.
+    db
+      .prepare(
+        `SELECT r.job, r.target, COUNT(*) AS fails, MAX(r.started_at) AS last, substr(MAX(r.error), 1, 160) AS error
+         FROM sync_runs r
+         WHERE r.started_at > ? AND r.error IS NOT NULL
+           AND r.started_at > COALESCE((SELECT MAX(s.started_at) FROM sync_runs s
+                                        WHERE s.job = r.job AND s.target IS r.target AND s.error IS NULL), '')
+         GROUP BY r.job, r.target HAVING COUNT(*) >= 3 ORDER BY last DESC LIMIT 10`,
+      )
+      .bind(since24),
   ]);
 
   const one = <T,>(r: D1Result | undefined) => (r?.results?.[0] ?? {}) as T;
@@ -248,6 +278,11 @@ async function overview(c: AppContext) {
     match_number: number;
   }>(videosR);
   const errors = rows<{ started_at: string; job: string; target: string | null; error: string }>(errorsR);
+  const ftcOk = one<{ t: string | null }>(ftcOkR).t;
+  const ftcAuth = one<{ started_at?: string; job?: string; target?: string; error?: string }>(ftcAuthR);
+  const stuck = rows<{ job: string; target: string | null; fails: number; last: string; error: string }>(
+    stuckR,
+  );
 
   // Database size: D1 allows these pragmas; fall back silently if not.
   let dbBytes: number | null = null;
@@ -295,11 +330,15 @@ async function overview(c: AppContext) {
       ? "ok"
       : "warn";
   const pct = Math.min(100, (units / YT_QUOTA) * 100);
+  // Rejected credentials: the newest 401/403 is more recent than the last FTC request that worked.
+  const authFailing = !!ftcAuth.started_at && (!ftcOk || ftcAuth.started_at > ftcOk);
+  const credStatus: Status = authFailing ? "fail" : ftcOk ? "ok" : "warn";
+  const stuckStatus: Status = stuck.some((x) => x.fails >= ATTEMPTS) ? "fail" : stuck.length ? "warn" : "ok";
 
   return (
     <Layout title="Admin overview">
       <h1>Admin</h1>
-      <AdminNav active="overview" />
+      <AdminNav active="overview" env={c.env.ENV_NAME} />
 
       <h2>Health</h2>
       <Table>
@@ -323,6 +362,34 @@ async function overview(c: AppContext) {
                 Last error {ago(lastErr.started_at)} on {lastErr.job} {lastErr.target}: {lastErr.error}
               </div>
             )}
+          </Check>
+          <Check name="FTC API credentials" s={credStatus}>
+            {authFailing ? (
+              <>
+                <b>Rejected</b> ({ftcAuth.error}) {ago(ftcAuth.started_at)} on {ftcAuth.job} {ftcAuth.target}.
+                Re-set <code>FTC_API_USER</code> / <code>FTC_API_TOKEN</code> on this environment's sync
+                Worker
+                {c.env.ENV_NAME === "staging" ? " (wrangler secret put … --env staging)" : ""}.
+              </>
+            ) : (
+              <>Last accepted request {ago(ftcOk)}</>
+            )}
+          </Check>
+          <Check name="Repeated failures" s={stuckStatus}>
+            {stuck.length === 0
+              ? "No job has failed 3+ times in a row in the last 24 hours"
+              : stuck.map((x) => (
+                  <div>
+                    <a
+                      href={`/admin/runs?job=${x.job}${x.target ? `&target=${encodeURIComponent(x.target)}` : ""}`}
+                    >
+                      {x.job} {x.target}
+                    </a>{" "}
+                    failed {x.fails}× (last {ago(x.last)})
+                    {x.fails >= ATTEMPTS && <b> · retries used up, likely in the dead-letter queue</b>}
+                    <div class="note">{x.error}</div>
+                  </div>
+                ))}
           </Check>
           <Check name="Daily resync" s={dailyStatus}>
             Teams + recent events, 09:30 UTC · last ran {ago(lastDaily)}
@@ -383,6 +450,31 @@ async function overview(c: AppContext) {
           </Check>
         </tbody>
       </Table>
+
+      <h2>Re-sync an event</h2>
+      <form method="post" action="/admin/resync" class="filters">
+        <label>
+          Season
+          <select name="season">
+            {ALL_SEASONS.map((y) => (
+              <option value={y} selected={y === CURRENT_SEASON}>
+                {seasonLabel(y)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Event code
+          <input name="code" required pattern="[A-Za-z0-9]{2,20}" placeholder="KZASN1" />
+        </label>
+        <button type="submit" class="go" disabled={!c.env.SYNC_QUEUE}>
+          Re-sync (forced)
+        </button>
+        <span class="note">
+          Re-fetches schedule, scores, rankings and awards from the FTC API and reruns OPR
+          {c.env.SYNC_QUEUE ? "" : " (no SYNC_QUEUE binding here)"}.
+        </span>
+      </form>
 
       <h2>Last 24 hours</h2>
       <Table>
@@ -547,7 +639,7 @@ adminRoutes.post("/admin/test/youtube", async (c) => {
   return c.html(
     <Layout title="YouTube API test">
       <h1>YouTube API test</h1>
-      <AdminNav active="overview" />
+      <AdminNav active="overview" env={c.env.ENV_NAME} />
       <p>
         <Dot s={result.ok ? "ok" : "fail"} /> {result.detail}{" "}
         <span class="note">({Date.now() - t0} ms, 1 unit)</span>
@@ -568,13 +660,36 @@ adminRoutes.post("/admin/test/youtube", async (c) => {
   );
 });
 
+adminRoutes.post("/admin/resync", async (c) => {
+  if (!(await isAdmin(c))) return c.redirect("/admin");
+  const form = await c.req.parseBody();
+  const season = Number(form.season);
+  const code = String(form.code ?? "")
+    .trim()
+    .toUpperCase();
+  if (!isSeason(season) || !/^[A-Z0-9]{2,20}$/.test(code) || !c.env.SYNC_QUEUE) {
+    return c.text("bad season or event code, or no SYNC_QUEUE binding", 400);
+  }
+  await c.env.SYNC_QUEUE.sendBatch([
+    { body: { job: "eventMatches", season, code, force: true } },
+    { body: { job: "awards", season, code, force: true } },
+  ]);
+  return c.redirect(`/admin/runs?target=${encodeURIComponent(`${season}/${code}`)}&queued=1`);
+});
+
 adminRoutes.get("/admin/runs", async (c) => {
   if (!(await isAdmin(c))) return c.redirect("/admin");
   const job = c.req.query("job") ?? "";
   const errorsOnly = c.req.query("errors") === "1";
   const bulk = c.req.query("bulk") ?? "all"; // all | live | backfill
+  const target = c.req.query("target") ?? "";
+  const queued = c.req.query("queued") === "1";
   const where: string[] = [];
   const args: string[] = [];
+  if (target) {
+    where.push("target = ?");
+    args.push(target);
+  }
   if (job) {
     where.push("job = ?");
     args.push(job);
@@ -604,8 +719,16 @@ adminRoutes.get("/admin/runs", async (c) => {
   return c.html(
     <Layout title="Sync log">
       <h1>Sync log</h1>
-      <AdminNav active="runs" />
+      <AdminNav active="runs" env={c.env.ENV_NAME} />
+      {target && (
+        <p class="note">
+          {queued ? `Queued a forced re-sync of ${target}. ` : ""}Showing runs for <b>{target}</b> only;{" "}
+          {queued ? "reload in a few seconds to see the result. " : ""}
+          <a href="/admin/runs">show all</a>
+        </p>
+      )}
       <form class="filters" method="get">
+        {target && <input type="hidden" name="target" value={target} />}
         <label>
           Job
           <select name="job" {...auto}>

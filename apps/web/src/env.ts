@@ -11,7 +11,13 @@ export interface Env {
   YOUTUBE_API_KEY?: string;
   /** "1" in local dev (.dev.vars) to bypass the edge HTML cache. */
   DEV?: string;
+  /** "production" | "staging" (wrangler.jsonc vars); unset in local dev. */
+  ENV_NAME?: string;
+  /** The sync Worker's job queue, for admin re-syncs. Messages must match apps/sync SyncMessage. */
+  SYNC_QUEUE?: Queue<ResyncMessage>;
 }
+
+export type ResyncMessage = { job: "eventMatches" | "awards"; season: number; code: string; force: true };
 
 export type AppContext = Context<{ Bindings: Env }>;
 

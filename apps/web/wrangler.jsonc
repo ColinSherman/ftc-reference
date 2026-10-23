@@ -23,6 +23,10 @@
   // Deploy version id is part of the HTML cache key, so each deploy serves fresh markup.
   "version_metadata": { "binding": "CF_VERSION" },
   "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }],
+  // Admin "Re-sync event" sends jobs straight to the sync Worker's queue. vars/queues are not inherited:
+  // the staging env below sets its own.
+  "vars": { "ENV_NAME": "production" },
+  "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-sync-jobs" }] },
 
   // `wrangler deploy --env staging` -> stage.ftc-reference.com. Separate Worker AND separate data: it reads
   // the staging D1/KV that ftcref-sync-stage writes (a copy of production, see scripts/stage-seed.mjs).
@@ -44,7 +48,9 @@
         }
       ],
       "version_metadata": { "binding": "CF_VERSION" },
-      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "3e819b0648c04641a586463e186bbe5b" }]
+      "kv_namespaces": [{ "binding": "CACHE_VER", "id": "3e819b0648c04641a586463e186bbe5b" }],
+      "vars": { "ENV_NAME": "staging" },
+      "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-stage-sync-jobs" }] }
     }
   }
 }
