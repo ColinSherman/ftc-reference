@@ -51,7 +51,8 @@ export async function planLive(env: Env, season: number, now = new Date()): Prom
     `SELECT e.code, e.timezone, e.date_start, e.date_end, s.last_checked_at, s.last_changed_at
      FROM events e
      LEFT JOIN sync_state s ON s.key = ?1 || '/schedule/' || e.code || '/qual/hybrid'
-     WHERE e.season = ?1 AND substr(e.date_start, 1, 10) <= ?3 AND substr(e.date_end, 1, 10) >= ?2`,
+     WHERE e.season = ?1 AND e.removed_at IS NULL
+       AND substr(e.date_start, 1, 10) <= ?3 AND substr(e.date_end, 1, 10) >= ?2`,
   )
     .bind(season, lo, hi)
     .all<PlanRow>();
@@ -77,7 +78,8 @@ export async function planRosters(
   const today = now.toISOString().slice(0, 10);
   const hi = new Date(now.getTime() + days * DAY).toISOString().slice(0, 10);
   const { results } = await env.DB.prepare(
-    "SELECT code FROM events WHERE season = ? AND substr(date_end, 1, 10) >= ? AND substr(date_start, 1, 10) <= ?",
+    `SELECT code FROM events WHERE season = ? AND removed_at IS NULL
+       AND substr(date_end, 1, 10) >= ? AND substr(date_start, 1, 10) <= ?`,
   )
     .bind(season, today, hi)
     .all<{ code: string }>();
@@ -89,7 +91,8 @@ export async function recentEvents(env: Env, season: number, now = new Date()) {
   const lo = new Date(now.getTime() - 30 * DAY).toISOString().slice(0, 10);
   const today = now.toISOString().slice(0, 10);
   const { results } = await env.DB.prepare(
-    "SELECT code FROM events WHERE season = ? AND substr(date_start, 1, 10) <= ? AND substr(date_end, 1, 10) >= ?",
+    `SELECT code FROM events WHERE season = ? AND removed_at IS NULL
+       AND substr(date_start, 1, 10) <= ? AND substr(date_end, 1, 10) >= ?`,
   )
     .bind(season, today, lo)
     .all<{ code: string }>();

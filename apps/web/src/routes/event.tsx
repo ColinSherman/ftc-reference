@@ -112,7 +112,8 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
     const withResults = c.req.query("results") === "1";
     const withVideo = c.req.query("video") === "1";
 
-    const where = ["e.season = ?"];
+    // Events FIRST no longer lists (cancelled/renamed) stay reachable by URL but drop off the list.
+    const where = ["e.season = ?", "e.removed_at IS NULL"];
     const args: (string | number)[] = [season];
     const group = TYPE_GROUPS[type];
     const kinds = group ? group.kinds : KIND_LABELS[type] ? [type] : COMPETITION;
@@ -455,6 +456,7 @@ interface EventRow {
   league_code: string | null;
   live_stream_url: string | null;
   remote: number;
+  removed_at: string | null;
 }
 
 interface MatchRow {
@@ -678,6 +680,12 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
             <a href={`https://ftc-events.firstinspires.org/${season}/${code}`}>FIRST event page</a>
           </div>
         </div>
+        {ev.removed_at && (
+          <p class="note">
+            FIRST no longer lists this event (cancelled or renamed) as of {ev.removed_at.slice(0, 10)}, so it
+            is no longer synced.
+          </p>
+        )}
         {correction && (
           <p class="note">
             * Scores here are corrected, not as reported. {correction.note} OPRs use the corrected scores.

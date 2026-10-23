@@ -2,6 +2,7 @@ import { runBatched, upsertStatements } from "@ftcref/db";
 import type { ApiTeamsPage, FtcApi } from "@ftcref/ftc-api";
 import type { Env } from "../env";
 import { changed, dataOf, trackedGet } from "../tracked";
+import { isInvalidEvent, markRemoved } from "./events";
 import { teamStatements } from "./teams";
 
 /**
@@ -10,7 +11,15 @@ import { teamStatements } from "./teams";
  * The list is replaced, not merged: a team that withdraws drops off. A 304 costs one cheap request.
  */
 export async function syncEventTeams(env: Env, api: FtcApi, season: number, code: string, force = false) {
-  const t = await trackedGet<ApiTeamsPage>(env, api, season, `teams?eventCode=${code}`, force);
+  let t: Awaited<ReturnType<typeof trackedGet<ApiTeamsPage>>>;
+  try {
+    t = await trackedGet<ApiTeamsPage>(env, api, season, `teams?eventCode=${code}`, force);
+  } catch (e) {
+    // FIRST dropped the event: retrying can't help, so flag it (planners then skip it) and stop.
+    if (!isInvalidEvent(e)) throw e;
+    await markRemoved(env.DB, season, code);
+    return 0;
+  }
   if (!changed(t)) {
     await env.DB.batch([t.commit()]);
     return 0;

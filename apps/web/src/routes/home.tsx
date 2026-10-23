@@ -56,7 +56,7 @@ homeRoutes.get("/", (c) =>
                   (SELECT COUNT(*) FROM event_streams es WHERE es.season = e.season AND es.event_code = e.code) AS streams,
                   CASE WHEN e.webcasts_json IS NOT NULL AND e.webcasts_json NOT IN ('', '[]') THEN 1 ELSE 0 END AS webcast
            FROM events e
-           WHERE e.season = ? AND substr(e.date_end, 1, 10) >= date(?, '-3 days') AND substr(e.date_start, 1, 10) <= date(?, '+7 days')
+           WHERE e.season = ? AND e.removed_at IS NULL AND substr(e.date_end, 1, 10) >= date(?, '-3 days') AND substr(e.date_start, 1, 10) <= date(?, '+7 days')
              AND (e.kind IS NULL OR e.kind NOT IN ('Kickoff','Workshop','DemoExhibition','VolunteerSignup','PracticeDay'))`,
         )
         .bind(SEASON, today, today),
