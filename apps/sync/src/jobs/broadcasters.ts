@@ -2,7 +2,6 @@ import { nowIso } from "@ftcref/db";
 import {
   alignMatches,
   autoTimedClip,
-  rssVideos,
   type StreamWindow,
   similarity,
   tokens,
@@ -10,6 +9,7 @@ import {
   YouTube,
 } from "@ftcref/videos";
 import type { Env } from "../env";
+import { channelRss } from "./channelFeed";
 
 const DAY = 86_400_000;
 /** Re-check streams that ended recently (processing finishes, matches get re-scored). */
@@ -43,8 +43,9 @@ export async function alignBroadcasterStreams(env: Env, yt: YouTube, usage: { rs
   for (const ch of channels) {
     if (ch.last_scanned_at) usage.rss++;
     let uploads = ch.last_scanned_at
-      ? await rssVideos({ channelId: ch.channel_id })
+      ? await channelRss(env, ch.channel_id)
       : await yt.playlistVideos(YouTube.uploadsPlaylist(ch.channel_id), 4);
+    if (!uploads) continue; // feed failed: recorded on the channel, try again next pass
     // Only this and last season's streams (VIDEO_MIN_SEASON); skip streams already settled.
     const seasonStart = Date.parse(`${VIDEO_MIN_SEASON}-08-01`);
     uploads = uploads.filter((u) => Date.parse(u.publishedAt) >= seasonStart);

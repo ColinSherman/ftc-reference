@@ -1,6 +1,7 @@
 import { nowIso } from "@ftcref/db";
-import { importVideos, recordApiUsage, rssVideos, YouTube } from "@ftcref/videos";
+import { importVideos, recordApiUsage, YouTube } from "@ftcref/videos";
 import type { Env } from "../env";
+import { channelRss } from "./channelFeed";
 
 /**
  * Re-scan channels marked auto_scan for new uploads and match them to FTC matches. A channel's first
@@ -33,8 +34,9 @@ async function scanInner(env: Env, yt: YouTube, usage: { rss: number }) {
   for (const ch of channels) {
     if (ch.last_scanned_at) usage.rss++;
     const videos = ch.last_scanned_at
-      ? await rssVideos({ channelId: ch.channel_id })
+      ? await channelRss(env, ch.channel_id)
       : await yt.playlistVideos(YouTube.uploadsPlaylist(ch.channel_id), 10);
+    if (!videos) continue; // feed failed: recorded on the channel, try again next scan
     const r = await importVideos(env.DB, videos, { source: "scan", trusted: !!ch.trusted });
     approved += r.approved;
     pending += r.pending;

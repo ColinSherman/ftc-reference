@@ -127,6 +127,7 @@ async function overview(c: AppContext) {
     ftcOkR,
     ftcAuthR,
     stuckR,
+    badChR,
   ] = await db.batch([
     db
       .prepare(
@@ -240,6 +241,11 @@ async function overview(c: AppContext) {
          GROUP BY r.job, r.target HAVING COUNT(*) >= 3 ORDER BY last DESC LIMIT 10`,
       )
       .bind(since24),
+    db.prepare(
+      `SELECT channel_id, title, last_error, last_error_at FROM video_channels
+       WHERE last_error IS NOT NULL AND (last_scanned_at IS NULL OR last_error_at > last_scanned_at)
+       ORDER BY last_error_at DESC LIMIT 10`,
+    ),
   ]);
 
   const one = <T,>(r: D1Result | undefined) => (r?.results?.[0] ?? {}) as T;
@@ -306,6 +312,15 @@ async function overview(c: AppContext) {
   const stuck = rows<{ job: string; target: string | null; fails: number; last: string; error: string }>(
     stuckR,
   );
+  const badChannels = rows<{
+    channel_id: string;
+    title: string | null;
+    last_error: string;
+    last_error_at: string;
+  }>(badChR);
+  // Staging has no cron (its data is a copy of production), so schedule-driven checks don't apply.
+  const staging = c.env.ENV_NAME === "staging";
+  const sched = (st: Status): Status => (staging ? "info" : st);
 
   // Database size: D1 allows these pragmas; fall back silently if not.
   let dbBytes: number | null = null;
@@ -319,39 +334,42 @@ async function overview(c: AppContext) {
   }
 
   const liveAge = lastLive ? Date.now() - Date.parse(lastLive) : Number.POSITIVE_INFINITY;
-  const liveStatus: Status =
-    liveEvents === 0 ? "info" : liveAge < 10 * MIN ? "ok" : liveAge < 30 * MIN ? "warn" : "fail";
+  const liveStatus = sched(
+    liveEvents === 0 ? "info" : liveAge < 10 * MIN ? "ok" : liveAge < 30 * MIN ? "warn" : "fail",
+  );
   const ftcErrRate = ftc.jobs ? (ftc.errs ?? 0) / ftc.jobs : 0;
-  const ftcStatus: Status = !ftc.jobs
-    ? "warn"
-    : ftcErrRate > 0.2
-      ? "fail"
-      : ftcErrRate > 0.02
-        ? "warn"
-        : "ok";
-  const dailyStatus: Status = lastDaily && Date.now() - Date.parse(lastDaily) < 26 * HOUR ? "ok" : "warn";
+  const ftcStatus = sched(!ftc.jobs ? "warn" : ftcErrRate > 0.2 ? "fail" : ftcErrRate > 0.02 ? "warn" : "ok");
+  const dailyStatus = sched(lastDaily && Date.now() - Date.parse(lastDaily) < 26 * HOUR ? "ok" : "warn");
   const pendingSeasons = seasons.filter((s) => !s.backfilled_at);
-  const avStatus: Status = av.checked && Date.now() - Date.parse(av.checked) < 7 * HOUR ? "ok" : "warn";
+  const avStatus = sched(av.checked && Date.now() - Date.parse(av.checked) < 7 * HOUR ? "ok" : "warn");
   const units = yt?.units ?? 0;
-  const ytStatus: Status = !c.env.YOUTUBE_API_KEY
-    ? "fail"
-    : units > YT_QUOTA * 0.9
+  const ytStatus: Status = staging
+    ? "info"
+    : !c.env.YOUTUBE_API_KEY
       ? "fail"
-      : (yt?.errors ?? 0) > 0 && (!yt?.last_ok_at || (yt.last_error_at ?? "") > yt.last_ok_at)
-        ? "warn"
-        : units > YT_QUOTA * 0.6
+      : units > YT_QUOTA * 0.9
+        ? "fail"
+        : (yt?.errors ?? 0) > 0 && (!yt?.last_ok_at || (yt.last_error_at ?? "") > yt.last_ok_at)
           ? "warn"
-          : "ok";
-  const scanStatus: Status = scan.error
-    ? "fail"
-    : scan.started_at && Date.now() - Date.parse(scan.started_at) < 7 * HOUR
-      ? "ok"
-      : "warn";
-  const alignStatus: Status = align.error
-    ? "fail"
-    : align.started_at && Date.now() - Date.parse(align.started_at) < HOUR
-      ? "ok"
-      : "warn";
+          : units > YT_QUOTA * 0.6
+            ? "warn"
+            : "ok";
+  const scanStatus = sched(
+    scan.error
+      ? "fail"
+      : badChannels.length
+        ? "warn"
+        : scan.started_at && Date.now() - Date.parse(scan.started_at) < 7 * HOUR
+          ? "ok"
+          : "warn",
+  );
+  const alignStatus = sched(
+    align.error
+      ? "fail"
+      : align.started_at && Date.now() - Date.parse(align.started_at) < HOUR
+        ? "ok"
+        : "warn",
+  );
   const pct = Math.min(100, (units / YT_QUOTA) * 100);
   // Rejected credentials: the newest 401/403 is more recent than the last FTC request that worked.
   const authFailing = !!ftcAuth.started_at && (!ftcOk || ftcAuth.started_at > ftcOk);
@@ -364,6 +382,12 @@ async function overview(c: AppContext) {
       <AdminNav active="overview" env={c.env.ENV_NAME} />
 
       <h2>Health</h2>
+      {staging && (
+        <p class="note">
+          Staging has no cron: its data is a copy of production from the last refresh, and events only sync
+          when re-synced. Checks that depend on scheduled jobs show — here.
+        </p>
+      )}
       <Table>
         <thead>
           <tr>
@@ -459,6 +483,13 @@ async function overview(c: AppContext) {
             ) : (
               ` · ${fmt(scan.rows_written)} videos matched`
             )}
+            {badChannels.map((b) => (
+              <div class="note">
+                Feed failing for <a href={`/admin/channels/${b.channel_id}`}>{b.title ?? b.channel_id}</a> (
+                {b.last_error}, {ago(b.last_error_at)}). Fix its channel ID or remove it; other channels still
+                scan.
+              </div>
+            ))}
           </Check>
           <Check name="Livestream timing" s={alignStatus}>
             {fmt(alignState.matches)} matches timed in livestreams · {fmt(alignState.ok)}/
