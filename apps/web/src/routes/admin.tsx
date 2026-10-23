@@ -198,22 +198,31 @@ async function overview(c: AppContext) {
          WHERE error IS NOT NULL AND started_at > ? ORDER BY id DESC LIMIT 12`,
       )
       .bind(since24),
-    db.prepare(
-      `SELECT MAX(started_at) AS t FROM sync_runs WHERE job IN ${FTC_JOBS} AND requests > 0 AND error IS NULL`,
-    ),
-    db.prepare(
-      `SELECT started_at, job, target, substr(error, 1, 200) AS error FROM sync_runs
-       WHERE job IN ${FTC_JOBS} AND (error LIKE 'FTC API 401 %' OR error LIKE 'FTC API 403 %')
-       ORDER BY id DESC LIMIT 1`,
-    ),
-    // Targets whose every run since their last success (in the last day) failed.
+    // Every sync_runs query here is bounded by started_at (the only index): the table holds two weeks
+    // of runs, and a slow admin query holds up D1 for the public pages too.
     db
       .prepare(
-        `SELECT r.job, r.target, COUNT(*) AS fails, MAX(r.started_at) AS last, substr(MAX(r.error), 1, 160) AS error
-         FROM sync_runs r
-         WHERE r.started_at > ? AND r.error IS NOT NULL
-           AND r.started_at > COALESCE((SELECT MAX(s.started_at) FROM sync_runs s
-                                        WHERE s.job = r.job AND s.target IS r.target AND s.error IS NULL), '')
+        `SELECT MAX(started_at) AS t FROM sync_runs
+         WHERE started_at > ? AND job IN ${FTC_JOBS} AND requests > 0 AND error IS NULL`,
+      )
+      .bind(since24),
+    db
+      .prepare(
+        `SELECT started_at, job, target, substr(error, 1, 200) AS error FROM sync_runs
+         WHERE started_at > ? AND job IN ${FTC_JOBS} AND (error LIKE 'FTC API 401 %' OR error LIKE 'FTC API 403 %')
+         ORDER BY started_at DESC LIMIT 1`,
+      )
+      .bind(since24),
+    // Targets whose every run since their last success (in the last day) failed. One pass over the
+    // day's rows: a per-row correlated "last success" lookup scanned the whole table for each error.
+    db
+      .prepare(
+        `WITH r AS (SELECT job, COALESCE(target, '') AS target, started_at, error FROM sync_runs WHERE started_at > ?1),
+              ok AS (SELECT job, target, MAX(started_at) AS t FROM r WHERE error IS NULL GROUP BY job, target)
+         SELECT r.job, NULLIF(r.target, '') AS target, COUNT(*) AS fails, MAX(r.started_at) AS last,
+                substr(MAX(r.error), 1, 160) AS error
+         FROM r LEFT JOIN ok ON ok.job = r.job AND ok.target = r.target
+         WHERE r.error IS NOT NULL AND r.started_at > COALESCE(ok.t, '')
          GROUP BY r.job, r.target HAVING COUNT(*) >= 3 ORDER BY last DESC LIMIT 10`,
       )
       .bind(since24),
@@ -371,8 +380,10 @@ async function overview(c: AppContext) {
                 Worker
                 {c.env.ENV_NAME === "staging" ? " (wrangler secret put … --env staging)" : ""}.
               </>
-            ) : (
+            ) : ftcOk ? (
               <>Last accepted request {ago(ftcOk)}</>
+            ) : (
+              <>No accepted FTC API request in the last 24 hours</>
             )}
           </Check>
           <Check name="Repeated failures" s={stuckStatus}>
