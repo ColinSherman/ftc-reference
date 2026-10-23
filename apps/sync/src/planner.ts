@@ -67,6 +67,23 @@ export async function planLive(env: Env, season: number, now = new Date()): Prom
   return msgs;
 }
 
+/** Roster refresh for events that have not ended and start within `days` days. */
+export async function planRosters(
+  env: Env,
+  season: number,
+  days: number,
+  now = new Date(),
+): Promise<SyncMessage[]> {
+  const today = now.toISOString().slice(0, 10);
+  const hi = new Date(now.getTime() + days * DAY).toISOString().slice(0, 10);
+  const { results } = await env.DB.prepare(
+    "SELECT code FROM events WHERE season = ? AND substr(date_end, 1, 10) >= ? AND substr(date_start, 1, 10) <= ?",
+  )
+    .bind(season, today, hi)
+    .all<{ code: string }>();
+  return results.map((r) => ({ job: "eventTeams", season, code: r.code }));
+}
+
 /** Events active within the last 30 days, for the daily forced re-sync. */
 export async function recentEvents(env: Env, season: number, now = new Date()) {
   const lo = new Date(now.getTime() - 30 * DAY).toISOString().slice(0, 10);
