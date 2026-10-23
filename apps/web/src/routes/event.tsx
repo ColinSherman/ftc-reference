@@ -524,10 +524,10 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         .bind(season, code),
       d
         .prepare(
-          `SELECT et.team, t.name_short, av.key AS av FROM event_teams et
+          `SELECT et.team, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM event_teams et
            LEFT JOIN teams t ON t.number = et.team
            LEFT JOIN team_avatars av ON av.team = et.team
-           WHERE et.season = ? AND et.event_code = ?`,
+           WHERE et.season = ? AND et.event_code = ? ORDER BY et.team`,
         )
         .bind(season, code),
       d
@@ -582,11 +582,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       av: string | null;
       person_name: string | null;
     }[];
-    const roster = new Map(
-      ((teamsR?.results ?? []) as { team: number; name_short: string | null; av: string | null }[]).map(
-        (t) => [t.team, t],
-      ),
-    );
+    const roster = new Map(((teamsR?.results ?? []) as RosterTeam[]).map((t) => [t.team, t]));
 
     const played = matches.filter((m) => m.played);
     let high: { np: number; m: MatchRow } | null = null;
@@ -720,6 +716,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         <div class="tabs">
           <a href="#rankings">Rankings</a>
           <a href="#matches">Matches</a>
+          {ranks.length === 0 && roster.size > 0 && <a href="#teams">Teams</a>}
           {!remote && <a href="#bracket">Bracket</a>}
           <a href="#stats">Team Stats</a>
           {!remote && <a href="#alliances">Alliances</a>}
@@ -766,6 +763,34 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
               ))}
             </tbody>
           </Table>
+        )}
+
+        {ranks.length === 0 && roster.size > 0 && (
+          <>
+            <h2 id="teams">Registered Teams ({roster.size})</h2>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th class="l">Name</th>
+                  <th class="l">Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...roster.values()].map((t) => (
+                  <tr>
+                    <td>
+                      <a href={`/teams/${t.team}?season=${season}`}>{t.team}</a>
+                    </td>
+                    <td class="l">
+                      <TeamName team={t.team} name={t.name_short} av={t.av} loc={t} />
+                    </td>
+                    <td class="l wrap">{[t.city, t.state_prov, t.country].filter(Boolean).join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </>
         )}
 
         <h2 id="matches">Matches</h2>
@@ -907,7 +932,16 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
   });
 });
 
-type Roster = Map<number, { name_short: string | null; av: string | null }>;
+interface RosterTeam {
+  team: number;
+  name_short: string | null;
+  av: string | null;
+  city: string | null;
+  state_prov: string | null;
+  country: string | null;
+  home_region: string | null;
+}
+type Roster = Map<number, RosterTeam>;
 
 function MatchTable(props: {
   season: number;

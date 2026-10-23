@@ -7,11 +7,12 @@ import { avatarYears, fetchAvatarBatch, syncAvatars } from "./jobs/avatars";
 import { syncAwards } from "./jobs/awards";
 import { syncEventMatches } from "./jobs/eventMatches";
 import { syncEvents } from "./jobs/events";
+import { syncEventTeams } from "./jobs/eventTeams";
 import { syncLeagueMembers, syncLeagues } from "./jobs/leagues";
 import { alignEventStreams } from "./jobs/streams";
 import { syncTeamsPage } from "./jobs/teams";
 import { scanVideoChannels } from "./jobs/videos";
-import { planLive, recentEvents } from "./planner";
+import { planLive, planRosters, recentEvents } from "./planner";
 
 const season = CURRENT_SEASON;
 /** The v3 API and avatar files number seasons by Championship year (BIOBUZZ 2026-27 → 2027). */
@@ -21,6 +22,9 @@ const cmpYear = season + 1;
  * jobs, so ≤ 5 requests/s per consumer and ≤ 10/s overall (max_concurrency 2). Live polling is unthrottled.
  */
 const BACKFILL_INTERVAL_MS = 200;
+/** Registered-team lists: hourly for events this many days out, every 6 hours out to the longer horizon. */
+const ROSTER_SOON_DAYS = 7;
+const ROSTER_AHEAD_DAYS = 45;
 
 /** Queues caps sendBatch at 100 messages and 256 KB; split on whichever comes first. */
 async function send(queue: Queue<SyncMessage>, msgs: SyncMessage[]) {
@@ -81,6 +85,9 @@ async function runJob(env: Env, msg: SyncMessage, bulk: boolean, throttle?: Thro
       }
       case "eventMatches":
         rows = (await syncEventMatches(env, api, msg.season, msg.code, msg.force)).rows;
+        break;
+      case "eventTeams":
+        rows = await syncEventTeams(env, api, msg.season, msg.code, msg.force);
         break;
       case "awards":
         rows = await syncAwards(env, api, msg.season, msg.code, msg.force);
@@ -146,6 +153,9 @@ export default {
         }
         // Livestream auto-timing every 20 minutes (no-op, and no quota, when nothing new needs it).
         if (new Date().getUTCMinutes() % 20 === 7) msgs.push({ job: "streamAlign" });
+        // Rosters for events in the next week change daily as teams register; check hourly.
+        if (new Date().getUTCMinutes() === 17)
+          msgs.push(...(await planRosters(env, season, ROSTER_SOON_DAYS)));
         await enqueue(env, msgs);
         const step = await advanceBackfill(env, (m) => enqueueBulk(env, m));
         if (step) console.log("backfill", step);
@@ -155,6 +165,7 @@ export default {
         await enqueue(env, [
           { job: "events", season },
           { job: "leagues", season },
+          ...(await planRosters(env, season, ROSTER_AHEAD_DAYS)),
           ...avatarYears(cmpYear).map((y): SyncMessage => ({ job: "avatars", cmpYear: y })),
           { job: "videoScan" },
         ]);
@@ -220,7 +231,10 @@ export default {
       if (req.method === "POST" && url.pathname === "/admin/sync-event") {
         const code = url.searchParams.get("code");
         if (!code) return new Response("code required", { status: 400 });
-        await enqueue(env, [{ job: "eventMatches", season: s, code: code.toUpperCase(), force: true }]);
+        await enqueue(env, [
+          { job: "eventTeams", season: s, code: code.toUpperCase(), force: true },
+          { job: "eventMatches", season: s, code: code.toUpperCase(), force: true },
+        ]);
         return Response.json({ enqueued: `${s}/${code}` });
       }
       if (url.pathname === "/admin/status") {
