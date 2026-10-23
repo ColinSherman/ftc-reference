@@ -526,7 +526,10 @@ homeRoutes.get("/seasons/:season{[0-9]{4}}/leaders", (c) => {
     const anyAdj = results.some((r) => cols.some((cl) => cl.adj(r)));
     const H = Object.fromEntries(cols.map((cl) => [cl.k, heatScale(results.map((r) => n(r[cl.k])))]));
     return c.html(
-      <Layout title={`${seasonLabel(season)} ${desc.game} Leaders: ${colLabel}`}>
+      <Layout
+        title={`${seasonLabel(season)} ${desc.game} Leaders: ${colLabel}`}
+        description={`FTC ${seasonLabel(season)} ${desc.game} team leaderboard: best OPR (${colLabel}), records and top match scores for every team.`}
+      >
         <h1>
           {seasonLabel(season)} Leaders · {desc.game}
         </h1>

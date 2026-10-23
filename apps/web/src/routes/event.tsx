@@ -12,6 +12,7 @@ import { raw } from "hono/html";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
 import { eventJsonLd } from "../jsonld";
+import { eventMeta } from "../meta";
 import { listWindow, slicePage } from "../paging";
 import { isUsRegion, regionName } from "../regions";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
@@ -631,10 +632,11 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       ]),
     );
 
+    const meta = eventMeta(ev, desc.game, seasonLabel(season), played.length, matches.length);
     return c.html(
       <Layout
-        title={`${ev.name} (${seasonLabel(season)})`}
-        description={`Rankings, match results and OPR for ${ev.name}, ${seasonLabel(season)} ${desc.game}.`}
+        title={meta.title}
+        description={meta.description}
         jsonLd={eventJsonLd(ev, desc.game, seasonLabel(season))}
       >
         <div class="crumbs">
