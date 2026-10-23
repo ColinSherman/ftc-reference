@@ -10,6 +10,11 @@ export function Layout(props: { title: string; description?: string; children: C
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <title>{props.title} | FTC-Reference</title>
         {props.description && <meta name="description" content={props.description} />}
+        <meta property="og:site_name" content="FTC-Reference" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content={`${props.title} | FTC-Reference`} />
+        {props.description && <meta property="og:description" content={props.description} />}
+        <meta name="twitter:card" content="summary" />
         <link rel="icon" type="image/svg+xml" href={FAVICON_DATA_URI} />
         <script>{raw(THEME_HEAD_JS)}</script>
         <style>{raw(CSS)}</style>
