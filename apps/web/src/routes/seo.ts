@@ -25,13 +25,8 @@ const urlset = (urls: { loc: string; lastmod?: string }[]) =>
       .join("")}</urlset>`,
   );
 
-// Only a Sitemap line: Cloudflare prepends its managed content-signals text to whatever we serve.
-seoRoutes.get("/robots.txt", (c) =>
-  c.text(`Sitemap: ${new URL(c.req.url).origin}/sitemap.xml\n`, 200, {
-    "Cache-Control": "public, max-age=3600",
-  }),
-);
-
+// No /robots.txt route on purpose: production's is Cloudflare-managed (content signals), and serving our own
+// from the Worker replaces it instead of adding to it. Submit /sitemap.xml in Search Console / Bing instead.
 seoRoutes.get("/sitemap.xml", (c) =>
   cached(c, { ttl: TTL }, async () => {
     const origin = new URL(c.req.url).origin;
