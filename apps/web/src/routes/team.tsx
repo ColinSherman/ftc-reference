@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { flagCode, placeTitle } from "../flags";
+import { teamJsonLd } from "../jsonld";
 import { imgurUrl, instagramEmbed, instagramUrl } from "../media";
 import { regionName } from "../regions";
 import { seasonStatsTable, statsMode } from "../statsScope";
@@ -181,6 +182,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
       <Layout
         title={`Team ${n} ${team.name_short ?? ""}`}
         description={`FTC team ${n} ${team.name_short ?? ""}: OPR, records, match results and awards across ${career.length} seasons.`}
+        jsonLd={teamJsonLd(team as unknown as Parameters<typeof teamJsonLd>[0])}
       >
         <div class="crumbs">
           <a href={`/seasons/${season}/leaders`}>Teams</a> › {n}

@@ -1,8 +1,15 @@
 import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
 import { CSS, FAVICON_DATA_URI, SORT_JS, THEME_HEAD_JS, THEME_TOGGLE_JS } from "../assets";
+import { ldScript } from "../jsonld";
 
-export function Layout(props: { title: string; description?: string; children: Child }) {
+export function Layout(props: {
+  title: string;
+  description?: string;
+  /** schema.org object, rendered as JSON-LD. */
+  jsonLd?: Record<string, unknown>;
+  children: Child;
+}) {
   return (
     <html lang="en">
       <head>
@@ -10,6 +17,7 @@ export function Layout(props: { title: string; description?: string; children: C
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <title>{props.title} | FTC-Reference</title>
         {props.description && <meta name="description" content={props.description} />}
+        {props.jsonLd && <script type="application/ld+json">{raw(ldScript(props.jsonLd))}</script>}
         <link rel="icon" type="image/svg+xml" href={FAVICON_DATA_URI} />
         <script>{raw(THEME_HEAD_JS)}</script>
         <style>{raw(CSS)}</style>
