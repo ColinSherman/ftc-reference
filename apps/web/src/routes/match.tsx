@@ -2,6 +2,7 @@ import { type ApiScore, correctionFor, getSeason, isSeason, seasonLabel } from "
 import { Hono } from "hono";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
+import { matchMeta } from "../meta";
 import { Layout } from "../views/layout";
 import { Av } from "../views/ui";
 
@@ -168,11 +169,24 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
 
     const flowers = season === 2026 && red ? biobuzzFlowers(red) : null;
 
+    const scoreOf = (ally: "R" | "B") => {
+      const detail = ally === "R" ? red : blue;
+      const fixed = correction && detail ? desc.common(detail) : undefined;
+      const score = fixed ? fixed.total : ally === "R" ? m.red_score : m.blue_score;
+      return score == null ? null : Number(score);
+    };
+    const side = (ally: "R" | "B") => teams.filter((t) => t.alliance === ally).map((t) => t.team);
+    const meta = matchMeta(
+      label,
+      m.event_name,
+      desc.game,
+      seasonLabel(season),
+      { played: !!m.played, remote: !!remote, red: scoreOf("R"), blue: scoreOf("B"), winner: m.winner },
+      side("R"),
+      side("B"),
+    );
     return c.html(
-      <Layout
-        title={`${label} – ${m.event_name} (${seasonLabel(season)})`}
-        description={`${label} at ${m.event_name}: ${desc.game} score breakdown and teams.`}
-      >
+      <Layout title={meta.title} description={meta.description}>
         <div class="crumbs">
           <a href={`/events/${season}`}>
             {seasonLabel(season)} {desc.game}

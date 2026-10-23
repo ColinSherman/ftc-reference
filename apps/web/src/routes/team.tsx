@@ -5,6 +5,7 @@ import { db, type Env, matchLabel, matchSlug, SEASON } from "../env";
 import { flagCode, placeTitle } from "../flags";
 import { teamJsonLd } from "../jsonld";
 import { imgurUrl, instagramEmbed, instagramUrl } from "../media";
+import { teamMeta } from "../meta";
 import { regionName } from "../regions";
 import { seasonStatsTable, statsMode } from "../statsScope";
 import { f1, f2, fmtShortRange, Layout, Table, wlt } from "../views/layout";
@@ -178,10 +179,33 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     const tot = (k: keyof Career) => career.reduce((s, r) => s + (Number(r[k]) || 0), 0);
     const yearsActive = career.filter((r) => r.events_played).length;
 
+    const latest = career.find((r) => r.events_played);
+    const meta = teamMeta(
+      {
+        number: n,
+        name: team.name_short as string | null,
+        city: team.city as string | null,
+        state_prov: team.state_prov as string | null,
+        country: team.country as string | null,
+        rookie_year: team.rookie_year as number | null,
+      },
+      career.length,
+      latest
+        ? {
+            seasonName: seasonLabel(latest.season),
+            game: getSeason(latest.season).game,
+            events: latest.events_played ?? 0,
+            wins: latest.wins ?? 0,
+            losses: latest.losses ?? 0,
+            ties: latest.ties ?? 0,
+            bestOpr: latest.best_opr_np,
+          }
+        : null,
+    );
     return c.html(
       <Layout
-        title={`Team ${n} ${team.name_short ?? ""}`}
-        description={`FTC team ${n} ${team.name_short ?? ""}: OPR, records, match results and awards across ${career.length} seasons.`}
+        title={meta.title}
+        description={meta.description}
         jsonLd={teamJsonLd(team as unknown as Parameters<typeof teamJsonLd>[0])}
       >
         <div class="crumbs">
