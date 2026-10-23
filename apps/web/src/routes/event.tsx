@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { raw } from "hono/html";
 import { cached, VERSIONED_TTL } from "../cache";
 import { db, type Env, matchLabel, matchSlug } from "../env";
+import { eventJsonLd } from "../jsonld";
 import { listWindow, slicePage } from "../paging";
 import { isUsRegion, regionName } from "../regions";
 import { f1, f2, fmtDateRange, Layout, Table, wlt } from "../views/layout";
@@ -630,6 +631,7 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
       <Layout
         title={`${ev.name} (${seasonLabel(season)})`}
         description={`Rankings, match results and OPR for ${ev.name}, ${seasonLabel(season)} ${desc.game}.`}
+        jsonLd={eventJsonLd(ev, desc.game, seasonLabel(season))}
       >
         <div class="crumbs">
           <a href={`/events/${season}`}>
