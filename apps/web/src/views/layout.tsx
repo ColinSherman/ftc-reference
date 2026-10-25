@@ -56,6 +56,8 @@ export function Layout(props: {
                 id="os"
                 class="os"
                 href="?stats=all"
+                // Crawlers have no cookie, so following this only costs a redirect and a second render.
+                rel="nofollow"
                 role="switch"
                 aria-checked="false"
                 title="Off-season events are left out of records and leaderboards"

@@ -5,9 +5,16 @@ export type Row = Record<string, string | number | null>;
 
 export const nowIso = () => new Date().toISOString();
 
+/** Bookkeeping columns: written along with a real change, but never a reason to rewrite a row. */
+const NOT_A_CHANGE = new Set(["updated_at"]);
+
 /**
  * Build multi-row `INSERT … ON CONFLICT DO UPDATE` statements, chunked so each stays under
  * D1's parameter limit. Returned statements should be run together with `db.batch()`.
+ *
+ * Existing rows are only updated when a value (other than `updated_at`) differs. Sync jobs re-send a
+ * whole event on every change, and D1 bills each rewritten row and index entry, so unchanged rows
+ * must cost a read, not a write.
  */
 export function upsertStatements(
   db: D1Database,
@@ -22,9 +29,11 @@ export function upsertStatements(
   const cols = Object.keys(first);
   const perStmt = Math.max(1, Math.floor(D1_MAX_PARAMS / cols.length));
   const updates = cols.filter((c) => !conflict.includes(c));
+  const compared = updates.filter((c) => !NOT_A_CHANGE.has(c));
   const onConflict =
-    updates.length && !opts.ignoreExisting
-      ? `DO UPDATE SET ${updates.map((c) => `${c}=excluded.${c}`).join(",")}`
+    compared.length && !opts.ignoreExisting
+      ? `DO UPDATE SET ${updates.map((c) => `${c}=excluded.${c}`).join(",")} ` +
+        `WHERE ${compared.map((c) => `${table}.${c} IS NOT excluded.${c}`).join(" OR ")}`
       : "DO NOTHING";
   const placeholder = `(${cols.map(() => "?").join(",")})`;
 

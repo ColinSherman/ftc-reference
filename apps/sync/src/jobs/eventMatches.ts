@@ -193,11 +193,14 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
     // Each score row carries ~1–3 KB of JSON; one row per statement keeps statements small.
     ...scoreRows.flatMap((r) => upsertStatements(env.DB, "match_scores", [r], ["match_id", "alliance"])),
     // Denormalise no-penalty totals onto matches (kept out of the match upsert so a 304 on scores can't null them).
+    // Only rows whose totals moved are rewritten (D1 bills every rewritten row).
     env.DB.prepare(
-      `UPDATE matches SET
-         red_np  = (SELECT np FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'R'),
-         blue_np = (SELECT np FROM match_scores s WHERE s.match_id = matches.id AND s.alliance = 'B')
-       WHERE season = ? AND event_code = ?`,
+      `UPDATE matches SET red_np = n.r, blue_np = n.b
+       FROM (SELECT m.id,
+                    (SELECT np FROM match_scores s WHERE s.match_id = m.id AND s.alliance = 'R') AS r,
+                    (SELECT np FROM match_scores s WHERE s.match_id = m.id AND s.alliance = 'B') AS b
+             FROM matches m WHERE m.season = ?1 AND m.event_code = ?2) AS n
+       WHERE matches.id = n.id AND (matches.red_np IS NOT n.r OR matches.blue_np IS NOT n.b)`,
     ).bind(season, code),
     // Corrected scores replace the reported finals too. Winners stay as officially recorded.
     ...(correction

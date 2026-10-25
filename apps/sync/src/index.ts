@@ -6,6 +6,7 @@ import type { Env, SyncMessage } from "./env";
 import { avatarYears, fetchAvatarBatch, syncAvatars } from "./jobs/avatars";
 import { syncAwards } from "./jobs/awards";
 import { syncEventMatches } from "./jobs/eventMatches";
+import { refreshSeasonRanks } from "./jobs/eventStats";
 import { syncEvents } from "./jobs/events";
 import { syncEventTeams } from "./jobs/eventTeams";
 import { syncLeagueMembers, syncLeagues } from "./jobs/leagues";
@@ -157,6 +158,8 @@ export default {
         if (new Date().getUTCMinutes() === 17)
           msgs.push(...(await planRosters(env, season, ROSTER_SOON_DAYS)));
         await enqueue(env, msgs);
+        // World ranks shown on team pages (only moved ranks are written).
+        if (new Date().getUTCMinutes() === 47) await refreshSeasonRanks(env.DB, season);
         const step = await advanceBackfill(env, (m) => enqueueBulk(env, m));
         if (step) console.log("backfill", step);
         break;

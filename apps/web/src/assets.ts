@@ -56,7 +56,7 @@ html[data-stats=all] .os i:before{left:13px}
 .fl{font-family:Consolas,Menlo,monospace;letter-spacing:1px}.fl i{font-style:normal;padding:0 1px}
 .fl .R{color:var(--red)}.fl .B{color:var(--blue)}.fl .P{color:var(--pollen)}
 .video{width:100%;aspect-ratio:16/9;border:0}.video.none{aspect-ratio:auto;padding:10px;border:1px dashed var(--line);color:var(--muted)}
-.mx{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:0 32px;align-items:start}
+.mx{display:grid;grid-template-columns:min-content minmax(0,1fr);gap:0 32px;align-items:start}
 @media (max-width:900px){.mx{grid-template-columns:minmax(0,1fr)}}
 .st td{font-variant-numeric:tabular-nums}
 .st a.tn{color:var(--fg);display:inline-block;max-width:12em;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}

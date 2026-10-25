@@ -25,6 +25,19 @@ describe("upsertStatements", () => {
     expect(stmts.reduce((n, s) => n + s.params.length, 0)).toBe(50 * 7);
     expect(stmts[0]?.sql).toContain("ON CONFLICT (a) DO UPDATE SET b=excluded.b");
   });
+
+  it("skips the write when nothing but updated_at changed", () => {
+    const { db, stmts } = fakeDb();
+    upsertStatements(db, "t", [{ a: 1, b: "x", updated_at: "now" }], ["a"]);
+    expect(stmts[0]?.sql).toContain("DO UPDATE SET b=excluded.b,updated_at=excluded.updated_at ");
+    expect(stmts[0]?.sql).toMatch(/WHERE t\.b IS NOT excluded\.b$/);
+  });
+
+  it("does nothing on conflict when only updated_at could change", () => {
+    const { db, stmts } = fakeDb();
+    upsertStatements(db, "t", [{ a: 1, updated_at: "now" }], ["a"]);
+    expect(stmts[0]?.sql).toMatch(/DO NOTHING$/);
+  });
 });
 
 describe("upsertStatements value coercion", () => {
