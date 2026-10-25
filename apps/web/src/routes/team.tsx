@@ -65,6 +65,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     const mode = statsMode(c);
     const table = seasonStatsTable(mode);
     const awardKind = mode === "official" ? `AND ${seasonKindIn("ae")}` : "";
+    const rankedCol = mode === "official" ? "ranked_official" : "ranked_all";
     const d = db(c);
     const [teamR, careerR, mediaR] = await d.batch([
       d
@@ -77,9 +78,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         .prepare(
           `SELECT y.year AS season, y.game_name, ts.name_short AS team_name,
                   s.events_played, s.wins, s.losses, s.ties, s.best_opr_np, s.best_opr_auto, s.best_event, s.best_np,
-                  CASE WHEN s.best_opr_np IS NULL THEN NULL ELSE
-                    (SELECT COUNT(*) FROM ${table} x WHERE x.season = y.year AND x.best_opr_np > s.best_opr_np) + 1 END AS world_rank,
-                  (SELECT COUNT(*) FROM ${table} x WHERE x.season = y.year) AS ranked,
+                  s.world_rank, y.${rankedCol} AS ranked,
                   (SELECT COUNT(*) FROM awards a
                     JOIN events ae ON ae.season = a.season AND ae.code = a.event_code
                     WHERE a.season = y.year AND a.team = ?1 ${awardKind}) AS awards

@@ -144,6 +144,35 @@ export async function recomputeEventStats(db: D1Database, season: number, code: 
 type SeasonStatsTable = "team_season_stats" | "team_official_stats";
 
 /**
+ * Store each team's world rank (by best NP OPR) and the season's ranked-team counts, so team pages
+ * don't count them per view. Only rows whose rank moved are written.
+ */
+export async function refreshSeasonRanks(db: D1Database, season: number) {
+  const rank = (table: SeasonStatsTable) =>
+    db
+      .prepare(
+        `UPDATE ${table} AS t SET world_rank = r.rk
+         FROM (SELECT team, CASE WHEN best_opr_np IS NULL THEN NULL
+                                 ELSE RANK() OVER (ORDER BY best_opr_np DESC) END AS rk
+               FROM ${table} WHERE season = ?1) AS r
+         WHERE t.season = ?1 AND t.team = r.team AND t.world_rank IS NOT r.rk`,
+      )
+      .bind(season);
+  await db.batch([
+    rank("team_season_stats"),
+    rank("team_official_stats"),
+    db
+      .prepare(
+        `UPDATE seasons SET ranked_all = c.a, ranked_official = c.o
+         FROM (SELECT (SELECT COUNT(*) FROM team_season_stats WHERE season = ?1) AS a,
+                      (SELECT COUNT(*) FROM team_official_stats WHERE season = ?1) AS o) AS c
+         WHERE year = ?1 AND (ranked_all IS NOT c.a OR ranked_official IS NOT c.o)`,
+      )
+      .bind(season),
+  ]);
+}
+
+/**
  * Season rollup per team: best / latest event OPRs and best single-match NP.
  * Writes every event into team_season_stats, and season events (official plus non-advancement)
  * into team_official_stats. Off-season stays in the all-events table only.
