@@ -2,6 +2,7 @@ import { CURRENT_SEASON } from "@ftcref/seasons";
 import { Hono } from "hono";
 import { cached } from "../cache";
 import { db, type Env } from "../env";
+import { robotsTxt } from "../seoTags";
 
 export const seoRoutes = new Hono<{ Bindings: Env }>();
 
@@ -25,8 +26,11 @@ const urlset = (urls: { loc: string; lastmod?: string }[]) =>
       .join("")}</urlset>`,
   );
 
-// No /robots.txt route on purpose: production's is Cloudflare-managed (content signals), and serving our own
-// from the Worker replaces it instead of adding to it. Submit /sitemap.xml in Search Console / Bing instead.
+// Cloudflare's managed robots.txt was comments only (no rules), so crawlers had the run of every host.
+seoRoutes.get("/robots.txt", (c) =>
+  c.text(robotsTxt(new URL(c.req.url).hostname), 200, { "Cache-Control": "public, max-age=3600" }),
+);
+
 seoRoutes.get("/sitemap.xml", (c) =>
   cached(c, { ttl: TTL }, async () => {
     const origin = new URL(c.req.url).origin;

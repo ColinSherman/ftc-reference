@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { seoHead } from "./seoTags";
+import { robotsTxt, seoHead } from "./seoTags";
+
+describe("robotsTxt", () => {
+  it("closes every host but the apex", () => {
+    expect(robotsTxt("stage.ftc-reference.com")).toBe("User-agent: *\nDisallow: /\n");
+    expect(robotsTxt("ftcref-web.example.workers.dev")).toBe("User-agent: *\nDisallow: /\n");
+  });
+  it("keeps search open on the apex but blocks training bots and crawl traps", () => {
+    const r = robotsTxt("ftc-reference.com");
+    expect(r).toMatch(/User-agent: ClaudeBot\n(User-agent: .+\n)*Disallow: \/\n/);
+    expect(r).toContain("Content-Signal: search=yes, ai-input=yes, ai-train=no");
+    for (const p of ["/videos/", "/admin", "/search", "/*?stats=", "/*&per="])
+      expect(r).toContain(`Disallow: ${p}\n`);
+    expect(r).toContain("Sitemap: https://ftc-reference.com/sitemap.xml");
+  });
+});
 
 const h = (u: string, status = 200) => seoHead(new URL(u), status);
 

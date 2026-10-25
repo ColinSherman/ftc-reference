@@ -10,6 +10,45 @@ export interface SeoHead {
   noindex: boolean;
 }
 
+/** Crawlers (and opt-out tokens) that only collect content for AI training; they send no visitors. */
+const TRAINING_BOTS = [
+  "GPTBot",
+  "ClaudeBot",
+  "CCBot",
+  "Bytespider",
+  "Amazonbot",
+  "Meta-ExternalAgent",
+  "Google-Extended",
+  "Applebot-Extended",
+];
+
+/**
+ * robots.txt. Anything but the apex (staging, *.workers.dev) is closed to all crawlers. The apex allows
+ * search and AI answers, says no to training, and keeps bots off pages that are forms, private, or
+ * cookie-toggle variants of other pages (crawled ~650k times a week before this).
+ */
+export function robotsTxt(host: string, apexHost = "ftc-reference.com"): string {
+  if (host !== apexHost) return "User-agent: *\nDisallow: /\n";
+  return [
+    ...TRAINING_BOTS.map((b) => `User-agent: ${b}`),
+    "Disallow: /",
+    "",
+    "User-agent: *",
+    "Content-Signal: search=yes, ai-input=yes, ai-train=no",
+    "Allow: /",
+    "Disallow: /videos/",
+    "Disallow: /admin",
+    "Disallow: /search",
+    "Disallow: /*?stats=",
+    "Disallow: /*&stats=",
+    "Disallow: /*?per=",
+    "Disallow: /*&per=",
+    "",
+    `Sitemap: https://${apexHost}/sitemap.xml`,
+    "",
+  ].join("\n");
+}
+
 /**
  * Decide canonical URL and indexability for a GET response.
  * - Tracking params are ignored, so a shared link with `?utm_source=` canonicalises to the clean URL.

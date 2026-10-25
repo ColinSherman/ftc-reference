@@ -306,13 +306,23 @@ matchRoutes.get("/:season{[0-9]{4}}/:code/:slug", (c) => {
                         ·{" "}
                       </>
                     ))}
-                  <a href={addHref}>Add another video</a>
+                  <a href={addHref} rel="nofollow">
+                    Add another video
+                  </a>
                 </p>
               </>
             ) : (
               <div class="video none">
-                No match video yet. <a href={addHref}>Add one</a> — or{" "}
-                <a href="/videos/submit">import a whole playlist</a>.
+                {/* Forms, not content: crawlers followed these ~650k times a week. */}
+                No match video yet.{" "}
+                <a href={addHref} rel="nofollow">
+                  Add one
+                </a>{" "}
+                — or{" "}
+                <a href="/videos/submit" rel="nofollow">
+                  import a whole playlist
+                </a>
+                .
               </div>
             )}
           </div>
