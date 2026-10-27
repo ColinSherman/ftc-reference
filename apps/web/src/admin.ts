@@ -5,8 +5,11 @@ import type { AppContext } from "./env";
  * ADMIN_ACCOUNTS. This Worker never reads sessions itself: it asks ftcref-account
  * (`/internal/whoami`) on each admin request, passing only the session cookie.
  */
-/** The session cookie exactly as the browser sent it (it's signed, so it's passed on undecoded). */
-const SESSION_COOKIE = /(?:^|;\s*)(ftcref\.session_token=[^;]+)/;
+/**
+ * The session cookie exactly as the browser sent it (it's signed, so it's passed on undecoded). Over
+ * HTTPS (staging, production) Better Auth names it `__Secure-ftcref.session_token`; locally, plain.
+ */
+const SESSION_COOKIE = /(?:^|;\s*)((?:__Secure-)?ftcref\.session_token=[^;]+)/;
 
 export type AdminUser = { handle: string };
 

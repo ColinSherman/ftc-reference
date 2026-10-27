@@ -32,6 +32,13 @@ describe("adminUser", () => {
     expect(seen[0]?.headers.get("cookie")).toBe(SESSION);
   });
 
+  it("finds the __Secure- cookie that HTTPS sites get", async () => {
+    const { env, seen } = account({ handle: "Csherm", admin: true });
+    const secure = "__Secure-ftcref.session_token=abc.d%2Be%3D";
+    expect(await adminUser(ctx(env, `stats=all; ftcref_admin=old; ${secure}`))).toEqual({ handle: "Csherm" });
+    expect(seen[0]?.headers.get("cookie")).toBe(secure);
+  });
+
   it("is null without a session cookie, without asking", async () => {
     const { env, seen } = account({ handle: "x", admin: true });
     expect(await adminUser(ctx(env, "stats=all"))).toBeNull();

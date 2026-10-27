@@ -97,8 +97,8 @@ legalRoutes.get("/privacy", (c) =>
             </li>
             <li>
               while you're signed in, a session: a random token, stored in the{" "}
-              <code>ftcref.session_token</code> cookie and on our side, that expires after 30 days. A
-              short-lived <code>ftcref.session_data</code> cookie saves looking it up on every page.
+              <code>__Secure-ftcref.session_token</code> cookie and on our side, that expires after 30 days. A
+              short-lived <code>__Secure-ftcref.session_data</code> cookie saves looking it up on every page.
             </li>
             <li>
               for each API key you create: the name you give it, a one-way hash of the key (not the key
