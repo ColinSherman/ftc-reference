@@ -1,8 +1,9 @@
 // Shared by the staging scripts. Every write these scripts make goes to a staging resource; production
 // is only ever read (exported). `assertStagingIsolated` is the guard: call it before any staging write.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -106,4 +107,55 @@ export function checkIsolated(config, path) {
   }
   for (const r of stage.ratelimits)
     if (prod.ratelimits.includes(r)) fail(`rate limit namespace ${r} is shared with production`);
+}
+
+/**
+ * Split a `d1 export` dump into files of at most ~maxChars, each holding whole statements, so every
+ * import request stays inside D1's per-request CPU limit (one 1 GB import gets the database reset).
+ * Each file commits on its own. The dump's leading PRAGMAs are repeated at the top of every file, and
+ * each CREATE INDEX gets a file to itself: indexing a big table is a request's worth of work alone.
+ * Statements are made idempotent (INSERT OR IGNORE, IF NOT EXISTS; every table has a primary key) so
+ * a file can be imported again after wrangler reports a failure for an import that in fact landed.
+ * Streams the dump (it outgrows a JS string). Resolves to the file paths, in import order.
+ */
+export async function splitDump(dump, dir, maxChars) {
+  const files = [];
+  const prelude = [];
+  let part = [];
+  let size = 0;
+  let stmt = [];
+  let inStr = false;
+  const flush = () => {
+    if (!part.length) return;
+    const file = join(dir, `part-${String(files.length).padStart(4, "0")}.sql`);
+    writeFileSync(file, `${[...prelude, ...part].join("\n")}\n`);
+    files.push(file);
+    part = [];
+    size = 0;
+  };
+  const lines = createInterface({ input: createReadStream(dump, "utf8"), crlfDelay: Infinity });
+  for await (const line of lines) {
+    stmt.push(line);
+    // A statement ends at a line ending in `;` outside a string literal ('' escapes keep parity).
+    for (let i = 0; i < line.length; i++) if (line.charCodeAt(i) === 39) inStr = !inStr;
+    if (inStr || !line.trimEnd().endsWith(";")) continue;
+    const sql = stmt
+      .join("\n")
+      .replace(/^INSERT INTO /, "INSERT OR IGNORE INTO ")
+      .replace(/^CREATE TABLE (?!IF NOT EXISTS )/, "CREATE TABLE IF NOT EXISTS ")
+      .replace(/^CREATE (UNIQUE )?INDEX (?!IF NOT EXISTS )/, "CREATE $1INDEX IF NOT EXISTS ");
+    stmt = [];
+    if (!files.length && !part.length && /^PRAGMA /i.test(sql)) {
+      prelude.push(sql);
+      continue;
+    }
+    const alone = /^CREATE (UNIQUE )?INDEX /i.test(sql);
+    if (alone || size + sql.length > maxChars) flush();
+    part.push(sql);
+    size += sql.length + 1;
+    if (alone) flush();
+  }
+  if (stmt.join("").trim()) throw new Error(`${dump}: ends mid-statement`);
+  flush();
+  return files;
 }
