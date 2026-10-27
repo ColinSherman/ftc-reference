@@ -7,6 +7,8 @@ export interface Env {
   ENV_NAME: string;
   /** Per-IP limit on sign-in and account writes. Keys are never stored. */
   AUTH_LIMIT?: RateLimit;
+  /** Per-key limit on API requests. */
+  KEY_LIMIT?: RateLimit;
   BETTER_AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;

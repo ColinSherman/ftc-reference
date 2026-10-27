@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
 import type { AppContext, Env } from "../env";
 import { Layout } from "../views/layout";
@@ -14,11 +15,23 @@ export const accountRoutes = new Hono<{ Bindings: Env }>();
 const PRIVATE = { "Cache-Control": "private, no-store" };
 
 type Provider = "google" | "github";
+type ApiKey = {
+  id: string;
+  name: string;
+  start: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+};
 type Me = {
   user: { handle: string; createdAt: string; linked: string[] } | null;
+  keys?: ApiKey[];
   providers: Provider[];
   dev: boolean;
 };
+
+/** Mirrors MAX_KEYS in apps/account/src/keys.ts; that Worker enforces it. */
+const MAX_KEYS = 5;
 
 /** `credential` is the local-only dev sign-in. */
 const PROVIDER_NAME: Record<string, string> = {
@@ -137,18 +150,24 @@ accountRoutes.get("/login", async (c) => {
 const ACCOUNT_ERRORS: Record<string, string> = {
   handle: "Handles are 3–24 letters, numbers, - or _.",
   confirm: 'Type "delete" in the box to delete your account.',
+  key_name: "Give the key a name of 1–40 characters.",
+  key_expiry: "Pick when the key expires.",
+  key_limit: `You can have up to ${MAX_KEYS} keys. Revoke one to make another.`,
 };
 
-accountRoutes.get("/account", async (c) => {
-  const who = await me(c);
-  if (!who?.user) return c.redirect("/login", 303);
+const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
+
+function accountPage(c: AppContext, who: Me & { user: NonNullable<Me["user"]> }, newKey?: string) {
   const { user } = who;
+  const keys = who.keys ?? [];
   const error = c.req.query("error");
+  const origin = new URL(c.req.url).origin;
   return c.html(
     <Layout title="Account" description="Your FTC-Reference account.">
       <div class="prose">
         <h1>Account</h1>
         {c.req.query("saved") !== undefined && <p class="ok">Saved.</p>}
+        {c.req.query("revoked") !== undefined && <p class="ok">Key revoked.</p>}
         {error && <p class="err">{ACCOUNT_ERRORS[error] ?? "That didn't work. Please try again."}</p>}
         <p>
           Signed in with {user.linked.map((p) => PROVIDER_NAME[p] ?? p).join(", ")} since{" "}
@@ -173,6 +192,87 @@ accountRoutes.get("/account", async (c) => {
           </button>
         </form>
 
+        <h2 id="keys">API keys</h2>
+        {newKey && (
+          <div class="newkey">
+            <p class="ok">Here's your new key. Copy it now: it won't be shown again.</p>
+            <code>{newKey}</code>
+            <p class="note">
+              Try it:{" "}
+              <code>
+                curl -H "Authorization: Bearer {newKey}" {origin}/api/v1/me
+              </code>
+            </p>
+            {/* Back to /account, so a refresh doesn't re-post the form and make another key. */}
+            <script>{raw('history.replaceState(null,"","/account#keys")')}</script>
+          </div>
+        )}
+        <p>
+          Keys let your scripts and apps call the FTC-Reference API. Send one as{" "}
+          <code>Authorization: Bearer ftcr_…</code>. Treat a key like a password; revoke it if it leaks. We
+          keep only a hash of each key, so a lost key can't be recovered, only replaced.
+        </p>
+        {keys.length > 0 && (
+          <div class="scroll">
+            <table class="st keys">
+              <thead>
+                <tr>
+                  <th class="l">Name</th>
+                  <th class="l">Key</th>
+                  <th>Created</th>
+                  <th>Last used</th>
+                  <th>Expires</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map((k) => (
+                  <tr>
+                    <td class="l wrap">{k.name}</td>
+                    <td class="l">
+                      <code>{k.start}…</code>
+                    </td>
+                    <td>{day(k.createdAt)}</td>
+                    <td>{day(k.lastUsedAt) || "never"}</td>
+                    <td>{day(k.expiresAt) || "never"}</td>
+                    <td>
+                      <form method="post" action={`/api/account/keys/${encodeURIComponent(k.id)}/revoke`}>
+                        <button type="submit" class="go">
+                          Revoke
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {keys.length < MAX_KEYS ? (
+          <form method="post" action="/account/keys" class="filters">
+            <label>
+              Name
+              <input name="name" required maxlength={40} placeholder="e.g. scouting app" autocomplete="off" />
+            </label>
+            <label>
+              Expires
+              <select name="expires">
+                <option value="30">in 30 days</option>
+                <option value="90">in 90 days</option>
+                <option value="365" selected>
+                  in 1 year
+                </option>
+                <option value="0">never</option>
+              </select>
+            </label>
+            <button type="submit" class="go">
+              Create key
+            </button>
+          </form>
+        ) : (
+          <p class="note">You have {MAX_KEYS} keys, the most allowed. Revoke one to make another.</p>
+        )}
+
         <h2>Sign out</h2>
         <form method="post" action="/api/account/sign-out">
           <button type="submit" class="go">
@@ -182,8 +282,8 @@ accountRoutes.get("/account", async (c) => {
 
         <h2>Delete account</h2>
         <p>
-          This deletes your account and its sign-in links right away. It can't be undone. You can make a new
-          account later.
+          This deletes your account, its sign-in links and its API keys right away. It can't be undone. You
+          can make a new account later.
         </p>
         <form method="post" action="/api/account/delete" class="filters">
           <label>
@@ -199,4 +299,23 @@ accountRoutes.get("/account", async (c) => {
     200,
     PRIVATE,
   );
+}
+
+accountRoutes.get("/account", async (c) => {
+  const who = await me(c);
+  if (!who?.user) return c.redirect("/login", 303);
+  return accountPage(c, { ...who, user: who.user });
+});
+
+/**
+ * Create a key, then render the account page with it: the only time the key is ever shown. The
+ * account Worker answers 201 `{ key }`, or a redirect (signed out, bad input, too many keys).
+ */
+accountRoutes.post("/account/keys", async (c) => {
+  const res = await toAccount(c, new Request(new URL("/api/account/keys", c.req.url), c.req.raw));
+  if (res.status !== 201) return res;
+  const { key } = await res.json<{ key: string }>();
+  const who = await me(c);
+  if (!who?.user) return c.redirect("/login", 303);
+  return accountPage(c, { ...who, user: who.user }, key);
 });

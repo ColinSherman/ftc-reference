@@ -8,7 +8,7 @@ export const legalRoutes = new Hono<{ Bindings: Env }>();
 /** Forwarded to the owner's inbox by Cloudflare Email Routing (set up on the ftc-reference.com zone). */
 export const CONTACT_EMAIL = "contact@ftc-reference.com";
 export const REPO_URL = "https://github.com/ColinSherman/ftc-reference";
-const UPDATED = "October 26, 2026";
+const UPDATED = "October 27, 2026";
 
 const Mail = () => <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>;
 
@@ -100,11 +100,17 @@ legalRoutes.get("/privacy", (c) =>
               <code>ftcref.session_token</code> cookie and on our side, that expires after 30 days. A
               short-lived <code>ftcref.session_data</code> cookie saves looking it up on every page.
             </li>
+            <li>
+              for each API key you create: the name you give it, a one-way hash of the key (not the key
+              itself), its first few characters, when it was created and expires, and roughly when it was last
+              used (to the hour).
+            </li>
           </ul>
           <p>
             We don't keep your email address, name, profile photo, IP address, browser details, or the access
-            tokens Google or GitHub return. Expired sessions are deleted daily. You can delete your account at
-            any time from the Account page; that removes everything above immediately.
+            tokens Google or GitHub return. Expired sessions and API keys are deleted daily. You can delete
+            your account at any time from the Account page; that removes everything above, API keys included,
+            immediately.
           </p>
 
           <h2>What our providers see</h2>

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { getMigrations } from "better-auth/db/migration";
@@ -6,16 +6,68 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { authOptions } from "./auth";
 import type { Env } from "./env";
 import { app, fromSite, purgeExpired } from "./index";
+import { touchKey, verifyKey } from "./keys";
 
 const ORIGIN = "http://localhost:8788";
-const MIGRATION = readFileSync(join(__dirname, "../../../packages/db/auth-migrations/0001_auth.sql"), "utf8");
+const MIGRATIONS_DIR = join(__dirname, "../../../packages/db/auth-migrations");
+const MIGRATIONS = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => readFileSync(join(MIGRATIONS_DIR, f), "utf8"));
 
-/** A fresh accounts DB (node:sqlite, which Better Auth accepts like D1) with the committed migration. */
+type Bindable = string | number | bigint | null | Uint8Array;
+const bindable = (v: unknown): Bindable =>
+  v instanceof Date ? v.toISOString() : typeof v === "boolean" ? Number(v) : (v as Bindable);
+
+/** Enough of D1 over node:sqlite for Better Auth (which then uses its D1 dialect) and our own SQL. */
+function d1(db: DatabaseSync): D1Database {
+  const stmt = (sql: string, args: unknown[] = []) => {
+    const run = () => {
+      const s = db.prepare(sql);
+      const params = args.map(bindable);
+      if (s.columns().length) return { results: s.all(...params), meta: { changes: 0, last_row_id: 0 } };
+      const r = s.run(...params);
+      return { results: [], meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
+    };
+    return {
+      bind: (...a: unknown[]) => stmt(sql, a),
+      first: async (col?: string) => {
+        const row = (run().results[0] as Record<string, unknown> | undefined) ?? null;
+        return row && col ? row[col] : row;
+      },
+      all: async () => ({ success: true, ...run() }),
+      run: async () => ({ success: true, ...run() }),
+      raw: async () => run().results.map((r) => Object.values(r as object)),
+    };
+  };
+  return {
+    prepare: (sql: string) => stmt(sql),
+    batch: async (stmts: ReturnType<typeof stmt>[]) => Promise.all(stmts.map((s) => s.all())),
+    exec: async (sql: string) => {
+      db.exec(sql);
+      return { count: 0, duration: 0 };
+    },
+  } as unknown as D1Database;
+}
+
+/** Runs waitUntil work so tests can await it. */
+function ctx() {
+  const pending: Promise<unknown>[] = [];
+  return {
+    waitUntil: (p: Promise<unknown>) => void pending.push(p),
+    passThroughOnException: () => {},
+    props: {},
+    settled: () => Promise.all(pending),
+  };
+}
+
+/** A fresh accounts DB with every committed migration. */
 function makeEnv(over: Partial<Env> = {}) {
   const db = new DatabaseSync(":memory:");
-  db.exec(MIGRATION);
+  db.exec("PRAGMA foreign_keys = ON");
+  for (const m of MIGRATIONS) db.exec(m);
   const env = {
-    AUTH_DB: db as unknown as D1Database,
+    AUTH_DB: d1(db),
     AUTH_URL: ORIGIN,
     ENV_NAME: "production",
     BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret-0123",
@@ -60,7 +112,9 @@ function req(env: Env, jar: Jar, path: string, init: RequestInit & { form?: Reco
     headers.set("content-type", "application/x-www-form-urlencoded");
   }
   if (init.method === "POST" && !headers.has("origin")) headers.set("origin", ORIGIN);
-  return app.request(`${ORIGIN}${path}`, { ...init, headers, body }, env).then((r) => jar.take(r));
+  return app
+    .request(`${ORIGIN}${path}`, { ...init, headers, body }, env, ctx() as unknown as ExecutionContext)
+    .then((r) => jar.take(r));
 }
 
 const b64url = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -118,8 +172,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("auth schema", () => {
   it("the committed migration is exactly what Better Auth expects", async () => {
-    const { db, env } = makeEnv();
-    const options = authOptions(env, db);
+    const { env } = makeEnv();
+    const options = authOptions(env, env.AUTH_DB);
     if (!options) throw new Error("no options");
     const { toBeCreated, toBeAdded } = await getMigrations(options);
     expect(toBeCreated).toEqual([]);
@@ -195,12 +249,19 @@ describe("account routes", () => {
     expect(res.status).toBe(403);
   });
 
-  it("decides same-site posts by Origin, else Sec-Fetch-Site", () => {
+  it("decides same-site posts by Sec-Fetch-Site, else Origin", () => {
     const h = (o: Record<string, string>) => fromSite(new Headers(o), ORIGIN);
-    expect(h({ origin: ORIGIN })).toBe(true);
-    expect(h({ origin: "https://evil.example", "sec-fetch-site": "same-origin" })).toBe(false);
+    expect(h({ origin: ORIGIN, "sec-fetch-site": "same-origin" })).toBe(true);
+    // A proxy rewrote Origin (wrangler dev): the browser's own Sec-Fetch-Site still says same-origin.
+    expect(h({ origin: "http://ftc-reference.com", "sec-fetch-site": "same-origin" })).toBe(true);
     expect(h({ origin: "null", "sec-fetch-site": "same-origin" })).toBe(true);
-    expect(h({ origin: "null", "sec-fetch-site": "cross-site" })).toBe(false);
+    expect(h({ origin: ORIGIN, "sec-fetch-site": "cross-site" })).toBe(false);
+    expect(h({ origin: ORIGIN, "sec-fetch-site": "same-site" })).toBe(false);
+    expect(h({ origin: ORIGIN, "sec-fetch-site": "none" })).toBe(false);
+    // Browsers without Fetch Metadata: Origin must match.
+    expect(h({ origin: ORIGIN })).toBe(true);
+    expect(h({ origin: "https://evil.example" })).toBe(false);
+    expect(h({ origin: "null" })).toBe(false);
     expect(h({})).toBe(false);
   });
 
@@ -284,14 +345,145 @@ describe("purgeExpired", () => {
     db.exec(`INSERT INTO "session" VALUES ('old','2026-10-01T00:00:00.000Z','t1','x','x',NULL,NULL,'u'),
                                          ('new','2026-12-01T00:00:00.000Z','t2','x','x',NULL,NULL,'u')`);
     db.exec(`INSERT INTO "verification" VALUES ('v','i','x','2026-10-01T00:00:00.000Z','x','x')`);
-    // Just enough of D1 for purgeExpired.
-    const d1 = {
-      prepare: (sql: string) => ({ bind: (...args: string[]) => ({ sql, args }) }),
-      batch: async (stmts: { sql: string; args: string[] }[]) =>
-        stmts.map((s) => db.prepare(s.sql).run(...s.args)),
-    } as unknown as D1Database;
-    await purgeExpired(d1, new Date("2026-10-26T00:00:00Z"));
+    db.exec(`INSERT INTO "api_key" VALUES ('k1','u','old','ftcr_a','h1','x',NULL,'2026-10-01T00:00:00.000Z'),
+                                         ('k2','u','new','ftcr_b','h2','x',NULL,'2026-12-01T00:00:00.000Z'),
+                                         ('k3','u','forever','ftcr_c','h3','x',NULL,NULL)`);
+    await purgeExpired(d1(db), new Date("2026-10-26T00:00:00Z"));
     expect(rows(db, "session").map((s) => s.id)).toEqual(["new"]);
     expect(rows(db, "verification")).toHaveLength(0);
+    expect(rows(db, "api_key").map((k) => k.id)).toEqual(["k2", "k3"]);
+  });
+});
+
+describe("API keys", () => {
+  const verify = (env: Env, key: string) =>
+    app.request(
+      "https://account/internal/verify-key",
+      { headers: { authorization: `Bearer ${key}` } },
+      env,
+      ctx() as unknown as ExecutionContext,
+    );
+
+  async function withUser(provider: "github" | "google" = "github", over: Partial<Env> = {}) {
+    const { db, env } = makeEnv(over);
+    stubProviders();
+    const jar = new Jar();
+    await signIn(env, jar, provider);
+    const create = async (form: Record<string, string>) =>
+      req(env, jar, "/api/account/keys", { method: "POST", form });
+    return { db, env, jar, create };
+  }
+
+  it("creates a key shown once; stores only its hash and first characters", async () => {
+    const { db, env, jar, create } = await withUser();
+    const res = await create({ name: "scouting app", expires: "365" });
+    expect(res.status).toBe(201);
+    const { key } = (await res.json()) as { key: string };
+    expect(key).toMatch(/^ftcr_[A-Za-z0-9_-]{43}$/);
+    const [row] = rows(db, "api_key");
+    expect(row).toMatchObject({ name: "scouting app", start: key.slice(0, 11), lastUsedAt: null });
+    expect(row?.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(rows(db, "api_key"))).not.toContain(key);
+    expect(Date.parse(String(row?.expiresAt)) - Date.parse(String(row?.createdAt))).toBe(365 * 86_400_000);
+
+    const me = (await (await req(env, jar, "/api/account/me")).json()) as { keys: Record<string, unknown>[] };
+    expect(me.keys).toHaveLength(1);
+    expect(Object.keys(me.keys[0] ?? {}).sort()).toEqual(
+      ["createdAt", "expiresAt", "id", "lastUsedAt", "name", "start"].sort(),
+    );
+  });
+
+  it("rejects bad names and expiries, and caps keys per user", async () => {
+    const { db, create } = await withUser();
+    const loc = async (form: Record<string, string>) => (await create(form)).headers.get("location");
+    expect(await loc({ name: "  ", expires: "30" })).toBe("/account?error=key_name");
+    expect(await loc({ name: "x".repeat(41), expires: "30" })).toBe("/account?error=key_name");
+    expect(await loc({ name: "ok", expires: "7" })).toBe("/account?error=key_expiry");
+    for (let i = 0; i < 5; i++) expect((await create({ name: `k${i}`, expires: "0" })).status).toBe(201);
+    expect(await loc({ name: "sixth", expires: "0" })).toBe("/account?error=key_limit");
+    expect(rows(db, "api_key")).toHaveLength(5);
+    expect(rows(db, "api_key")[0]?.expiresAt).toBeNull();
+  });
+
+  it("key creation needs a session and a same-site post", async () => {
+    const { env } = makeEnv();
+    const anon = await req(env, new Jar(), "/api/account/keys", {
+      method: "POST",
+      form: { name: "x", expires: "0" },
+    });
+    expect(anon.headers.get("location")).toBe("/login");
+    const { jar } = await withUser();
+    const cross = await req(env, jar, "/api/account/keys", {
+      method: "POST",
+      form: { name: "x", expires: "0" },
+      headers: { origin: "https://evil.example" },
+    });
+    expect(cross.status).toBe(403);
+  });
+
+  it("verifies a key: owner on success, 401 for malformed, unknown or expired keys", async () => {
+    const { db, env, create } = await withUser();
+    const { key } = (await (await create({ name: "bot", expires: "30" })).json()) as { key: string };
+    const ok = await verify(env, key);
+    expect(ok.status).toBe(200);
+    const owner = (await ok.json()) as Record<string, unknown>;
+    expect(owner).toMatchObject({ keyName: "bot", handle: "octo-kid" });
+    expect(Object.keys(owner).sort()).toEqual(["handle", "keyId", "keyName", "userId"]);
+
+    expect((await verify(env, "nope")).status).toBe(401);
+    expect((await verify(env, `${key.slice(0, -1)}${key.endsWith("A") ? "B" : "A"}`)).status).toBe(401);
+    db.exec(`UPDATE "api_key" SET "expiresAt" = '2020-01-01T00:00:00.000Z'`);
+    expect((await verify(env, key)).status).toBe(401);
+  });
+
+  it("writes last-used at most once an hour", async () => {
+    const { db, env, create } = await withUser();
+    const { key } = (await (await create({ name: "bot", expires: "0" })).json()) as { key: string };
+    const t0 = new Date("2026-10-27T10:00:00Z");
+    const first = await verifyKey(env.AUTH_DB, key, t0);
+    expect(first?.touch).toBe(true);
+    await touchKey(env.AUTH_DB, first?.keyId ?? "", t0);
+    expect((await verifyKey(env.AUTH_DB, key, new Date("2026-10-27T10:59:00Z")))?.touch).toBe(false);
+    expect((await verifyKey(env.AUTH_DB, key, new Date("2026-10-27T11:01:00Z")))?.touch).toBe(true);
+    expect(rows(db, "api_key")[0]?.lastUsedAt).toBe(t0.toISOString());
+  });
+
+  it("applies the per-key rate limit", async () => {
+    const limited: string[] = [];
+    const KEY_LIMIT = {
+      limit: async ({ key }: { key: string }) => {
+        limited.push(key);
+        return { success: false };
+      },
+    } as RateLimit;
+    const { db, env, create } = await withUser("github", { KEY_LIMIT });
+    const { key } = (await (await create({ name: "bot", expires: "0" })).json()) as { key: string };
+    expect((await verify(env, key)).status).toBe(429);
+    // Limited per key, not per IP: a school's shared address doesn't pool everyone's keys.
+    expect(limited).toEqual([rows(db, "api_key")[0]?.id]);
+  });
+
+  it("revoking only works on your own keys", async () => {
+    const a = await withUser("github");
+    const { key } = (await (await a.create({ name: "a", expires: "0" })).json()) as { key: string };
+    const keyId = String(rows(a.db, "api_key")[0]?.id);
+    // Another user, same DB.
+    const bJar = new Jar();
+    await signIn(a.env, bJar, "google");
+    await req(a.env, bJar, `/api/account/keys/${keyId}/revoke`, { method: "POST" });
+    expect((await verify(a.env, key)).status).toBe(200);
+    const revoke = await req(a.env, a.jar, `/api/account/keys/${keyId}/revoke`, { method: "POST" });
+    expect(revoke.headers.get("location")).toBe("/account?revoked=1");
+    expect((await verify(a.env, key)).status).toBe(401);
+    expect(rows(a.db, "api_key")).toHaveLength(0);
+  });
+
+  it("deleting the account deletes its keys", async () => {
+    const { db, env, jar, create } = await withUser("google");
+    const { key } = (await (await create({ name: "a", expires: "0" })).json()) as { key: string };
+    const del = await req(env, jar, "/api/account/delete", { method: "POST", form: { confirm: "delete" } });
+    expect(del.headers.get("location")).toBe("/login?deleted=1");
+    expect(rows(db, "api_key")).toHaveLength(0);
+    expect((await verify(env, key)).status).toBe(401);
   });
 });

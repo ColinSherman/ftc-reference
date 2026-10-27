@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { type Auth, authFor, DEV_USER, isLocal, providers } from "./auth";
 import type { Env } from "./env";
+import { createKey, deleteKeysOf, listKeys, revokeKey, touchKey, verifyKey } from "./keys";
 
 /**
  * ftcref-account: sign-in, sessions and account data. It has no public URL; ftcref-web forwards
@@ -10,6 +11,8 @@ import type { Env } from "./env";
  *
  * `/api/auth/*` is Better Auth (OAuth redirects and callbacks). `/api/account/*` is ours: plain form
  * posts from the web pages, answered with 303 redirects, plus `me` for the account page.
+ * `/internal/verify-key` checks API keys for ftcref-web's `/api/v1`; ftcref-web never forwards
+ * `/internal/*`, and the answer only says whose key it is, which the key's holder already knows.
  */
 type Ctx = { Bindings: Env; Variables: { auth: Auth } };
 const app = new Hono<Ctx>();
@@ -42,18 +45,26 @@ app.use("*", async (c, next) => {
 app.on(["GET", "POST"], "/api/auth/*", (c) => c.var.auth.handler(c.req.raw));
 
 /**
- * Form posts must come from the site itself. Browsers send Origin on a POST, but some privacy
- * settings send `Origin: null`; then Sec-Fetch-Site (which pages can't forge) decides.
+ * Form posts must come from the site itself. Sec-Fetch-Site decides when the browser sends it: pages
+ * can't forge it, and it's right even when a proxy rewrites Origin (wrangler dev does, to the
+ * production host). Older browsers without it fall back to Origin, which must match the site.
  */
 export function fromSite(headers: Headers, siteOrigin: string) {
-  const origin = headers.get("origin");
-  if (origin && origin !== "null") return origin === siteOrigin;
-  return headers.get("sec-fetch-site") === "same-origin";
+  const site = headers.get("sec-fetch-site");
+  if (site) return site === "same-origin";
+  return headers.get("origin") === siteOrigin;
 }
 
 app.use("/api/account/*", async (c, next) => {
-  if (c.req.method === "POST" && !fromSite(c.req.raw.headers, new URL(c.env.AUTH_URL).origin))
+  if (c.req.method === "POST" && !fromSite(c.req.raw.headers, new URL(c.env.AUTH_URL).origin)) {
+    // These two headers decide it, and hold nothing personal.
+    console.warn("cross-site form post rejected", {
+      path: c.req.path,
+      origin: c.req.header("origin") ?? null,
+      secFetchSite: c.req.header("sec-fetch-site") ?? null,
+    });
     return c.text("Forbidden", 403);
+  }
   await next();
 });
 
@@ -74,6 +85,7 @@ app.get("/api/account/me", async (c) => {
       createdAt: session.user.createdAt,
       linked: accounts.map((a) => a.providerId),
     },
+    keys: await listKeys(c.env.AUTH_DB, session.user.id),
     providers: providers(c.env),
     dev: isLocal(c.env),
   });
@@ -124,23 +136,66 @@ app.post("/api/account/handle", async (c) => {
   return redirectWithCookies(res, res.ok ? "/account?saved=1" : "/account?error=handle");
 });
 
+/**
+ * Makes a key and answers 201 `{ key }`: ftcref-web shows it once on the account page. Errors
+ * redirect back to the account page like the other forms.
+ */
+app.post("/api/account/keys", async (c) => {
+  const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.redirect("/login", 303);
+  const form = await c.req.parseBody();
+  const result = await createKey(c.env.AUTH_DB, session.user.id, {
+    name: String(form.name ?? ""),
+    days: Number(form.expires ?? NaN),
+  });
+  if ("error" in result) return c.redirect(`/account?error=key_${result.error}`, 303);
+  return c.json(result, 201);
+});
+
+app.post("/api/account/keys/:id/revoke", async (c) => {
+  const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.redirect("/login", 303);
+  await revokeKey(c.env.AUTH_DB, session.user.id, c.req.param("id"));
+  return c.redirect("/account?revoked=1", 303);
+});
+
 app.post("/api/account/delete", async (c) => {
   if ((await c.req.parseBody()).confirm !== "delete") return c.redirect("/account?error=confirm", 303);
+  const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.redirect("/login", 303);
   const res = await c.var.auth.api.deleteUser({ body: {}, headers: c.req.raw.headers, asResponse: true });
   if (res.status === 401) return c.redirect("/login", 303);
   // Deleting needs a recent sign-in (Better Auth's freshAge, 1 day).
   if (!res.ok) return c.redirect("/login?error=reauth", 303);
+  // The foreign key cascades too; this doesn't rely on it. Keys of a deleted user never verify anyway.
+  await deleteKeysOf(c.env.AUTH_DB, session.user.id);
   return redirectWithCookies(res, "/login?deleted=1");
+});
+
+/**
+ * `Authorization: Bearer ftcr_…` → 200 `{ keyId, keyName, userId, handle }`, 401, or 429 when the key
+ * is over KEY_LIMIT. A GET, so the per-IP AUTH_LIMIT on writes doesn't count API calls.
+ */
+app.get("/internal/verify-key", async (c) => {
+  const key = /^Bearer (\S+)$/.exec(c.req.header("authorization") ?? "")?.[1] ?? "";
+  const found = await verifyKey(c.env.AUTH_DB, key);
+  if (!found) return c.json({ error: "invalid_key" }, 401);
+  if (c.env.KEY_LIMIT && !(await c.env.KEY_LIMIT.limit({ key: found.keyId })).success)
+    return c.json({ error: "rate_limited" }, 429);
+  if (found.touch) c.executionCtx.waitUntil(touchKey(c.env.AUTH_DB, found.keyId));
+  const { touch: _, ...owner } = found;
+  return c.json(owner);
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 
-/** Daily: drop expired sessions and sign-in state, so nothing lingers past its use. */
+/** Daily: drop expired sessions, sign-in state and API keys, so nothing lingers past its use. */
 export async function purgeExpired(db: D1Database, now = new Date()) {
   const iso = now.toISOString();
   await db.batch([
     db.prepare(`DELETE FROM "session" WHERE "expiresAt" < ?`).bind(iso),
     db.prepare(`DELETE FROM "verification" WHERE "expiresAt" < ?`).bind(iso),
+    db.prepare(`DELETE FROM "api_key" WHERE "expiresAt" < ?`).bind(iso),
   ]);
 }
 

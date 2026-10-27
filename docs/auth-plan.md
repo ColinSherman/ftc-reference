@@ -169,17 +169,26 @@ staging) that deletes expired sessions and keys from `AUTH_DB`.
 
 ## Phase 2, PR 2: API keys
 
-- Add `@better-auth/api-key`: `apiKey()` plugin, key prefix `ftcr_`, and a migration
-  `0002_apikey.sql`.
-- `/account`: list keys (name, prefix, created, last used, expiry), create (shown once), revoke.
-  Cap keys per user (e.g. 5).
-- `/api/v1/*` middleware: read `Authorization: Bearer ftcr_…` (the plugin verifies from the body,
-  so extracting the key from the header is our code), then call `auth.api.verifyApiKey`.
-  Ship one endpoint, `GET /api/v1/me`, to prove the plumbing.
-- **Check D1 writes**: find out whether `verifyApiKey` writes on every call (last-used, remaining
-  count, rate-limit counters). If it does, turn off the plugin's rate limiting and counters, and
-  rate-limit with the Workers Rate Limiting binding instead. Keep "last used" to at most one write
-  per key per hour, to stay in line with the recent D1-write cuts.
+**Changed from the first plan:** our own `api_key` table instead of `@better-auth/api-key`. Checked in
+the plugin's source (1.7.13): `verifyApiKey` always writes the key row (`updatedAt`, plus usage and
+rate-limit counters) and most of its endpoints also sweep expired keys. There's no option to turn the
+write off, and one D1 write per API request is what this plan set out to avoid.
+
+What shipped (`apps/account/src/keys.ts`, migration `0002_api_keys.sql`):
+
+- Keys are `ftcr_` + 32 random bytes (base64url). Stored: SHA-256 hash, first 11 characters, name,
+  created, expires (30 days, 90 days, 1 year or never), last used. The key is shown once.
+- Up to 5 keys per user, enforced in the insert itself so concurrent creates can't pass it.
+- Verification is one indexed read joined to `user`. "Last used" is written at most once an hour per
+  key, after the response (`waitUntil`). Malformed keys never reach D1.
+- Per-key rate limit: the `KEY_LIMIT` binding, 120 requests per minute (namespaces 1003 prod,
+  1004 staging). Per key rather than per IP, so a school's shared address doesn't pool everyone.
+- `ftcref-web` serves `/api/v1/*`. It sends only the `Authorization` header to the account Worker's
+  `GET /internal/verify-key` and never reads the accounts DB. `GET /api/v1/me` is the one endpoint.
+- Deleting the account deletes its keys (explicitly, and by foreign-key cascade). The daily cron
+  deletes expired keys.
+- `/account` lists keys (name, first characters, created, last used, expires) with Revoke, and a
+  create form. The new key is rendered once by `POST /account/keys` and never put in a URL.
 
 ## Verify before merge (both PRs)
 
@@ -196,5 +205,6 @@ staging) that deletes expired sessions and keys from `AUTH_DB`.
 ## Follow-ups (not in these PRs)
 
 - Admin as a user role, retiring the `ADMIN_TOKEN` cookie.
-- Public data API endpoints behind the keys.
+- Public data API endpoints behind the keys, with CORS (browser apps send `Authorization`, which
+  needs a preflight) and a choice about caching shared data per key.
 - Per-user features (followed teams, saved filters), rendered client-side or on uncached routes only.
