@@ -2,7 +2,7 @@
 const TRACKING = /^(utm_\w+|fbclid|gclid|msclkid|ref|ref_src|igshid|mc_[ce]id)$/i;
 
 /** Paths that should never be indexed, whatever their status. */
-const PRIVATE = /^\/(admin|search|videos|a)(\/|$)/;
+const PRIVATE = /^\/(admin|search|videos|a|api|account|login)(\/|$)/;
 
 export interface SeoHead {
   /** Absolute canonical URL, or null when the page shouldn't declare one (noindex pages). */
@@ -38,6 +38,9 @@ export function robotsTxt(host: string, apexHost = "ftc-reference.com"): string 
     "Allow: /",
     "Disallow: /videos/",
     "Disallow: /admin",
+    "Disallow: /api/",
+    "Disallow: /account",
+    "Disallow: /login",
     "Disallow: /search",
     "Disallow: /*?stats=",
     "Disallow: /*&stats=",

@@ -12,6 +12,8 @@ Fast, dense FIRST Tech Challenge stats and scouting, styled like Baseball-Refere
 | `packages/stats` | OPR via ridge-regularised least squares (Cholesky). |
 | `apps/sync` | `ftcref-sync` Worker: cron planner → Queue → jobs that write D1, archive raw responses to R2, and bump cache versions in KV. |
 | `apps/web` | `ftcref-web` Worker: Hono JSX server-rendered HTML, near-zero client JS, version-keyed edge cache. |
+| `apps/account` | `ftcref-account` Worker: sign-in (Better Auth, Google + GitHub) and account data in its own D1 (`AUTH_DB`). No public URL: `ftcref-web` forwards `/api/auth/*` and `/api/account/*` to it over the `ACCOUNT` service binding and renders `/login` and `/account` itself, so the public Worker never loads auth code or reads a session. |
+| `packages/db/auth-migrations` | Schema for the accounts D1 (Better Auth's tables). Holds no email, name, photo, provider tokens, IP or user agent; see `docs/auth-plan.md`. |
 | `scripts/mock-ftc-api.mjs` | Local mock of the FTC API (one synthetic BIOBUZZ event) for end-to-end testing. |
 
 ## How sync works
@@ -65,14 +67,20 @@ Remote events (2020–21) have one team per match. They are stored with the team
 ```bash
 pnpm install
 pnpm db:migrate:local
+pnpm db:migrate:auth:local
 cp apps/sync/.dev.vars.example apps/sync/.dev.vars   # set FTC_API_BASE=http://localhost:8790/v2.0 to use the mock
 node scripts/mock-ftc-api.mjs                         # terminal 1
 pnpm dev:sync                                         # terminal 2 (:8787)
 pnpm dev:web                                          # terminal 3 (:8788); apps/web/.dev.vars DEV=1 bypasses the HTML cache
+pnpm dev:account                                      # terminal 4 (:8789), optional: /login then has a "Dev sign-in" button
 curl -X POST -H "Authorization: Bearer dev-admin-token" localhost:8787/admin/backfill
 curl -X POST -H "Authorization: Bearer dev-admin-token" "localhost:8787/admin/backfill?step=matches"
 curl "localhost:8787/__scheduled?cron=*+*+*+*+*"     # run the per-minute planner
 ```
+
+Accounts need no OAuth apps locally: `dev:account` runs with `ENV_NAME=local`, which turns on a fixed dev
+user and secret that exist only in local mode. Without it running, `/login` says sign-in is unavailable and
+everything else works.
 
 `pnpm test` runs the unit tests, `pnpm typecheck` runs the type checker, and `pnpm lint` runs Biome.
 
@@ -99,11 +107,12 @@ Three environments, each with its own data. Nothing outside production ever writ
 |---|---|---|---|
 | Web | `pnpm dev:web` (:8788) | `ftcref-web-stage` → <https://stage.ftc-reference.com> | `ftcref-web` → <https://ftc-reference.com> |
 | Sync | `pnpm dev:sync` (:8787) | `ftcref-sync-stage` (no cron) | `ftcref-sync` (crons) |
+| Accounts | `pnpm dev:account` (:8789), dev sign-in | `ftcref-account-stage`, D1 `ftcref-stage-auth` (never seeded) | `ftcref-account`, D1 `ftcref-auth` |
 | D1 | local SQLite in `.wrangler/state` | `ftcref-stage` | `ftcref` |
 | KV / queues | local | `ftcref-stage-cache`, `ftcref-stage-*` | `CACHE_VER`, `ftcref-sync-jobs`, `ftcref-backfill`, `ftcref-sync-dlq` |
 | Data | mock API (`scripts/mock-ftc-api.mjs`) | copy of production, refreshed weekly | FTC Events API |
 | Deployed by | you | every push to a PR (`stage.yml`) | merge to `main` (`deploy.yml`) |
-| Migrations | `pnpm db:migrate:local` | the PR's migrations, on push | on merge, before the deploy |
+| Migrations | `pnpm db:migrate:local`, `pnpm db:migrate:auth:local` | the PR's migrations, on push | on merge, before the deploy |
 
 **Contributors (including forks)** only need the local setup above: no Cloudflare account and no FTC API
 key. Fork PRs can't read repo secrets, so they get no staging deploy. A maintainer can run "Deploy staging"
@@ -112,7 +121,8 @@ from the Actions tab on the fork's branch after reading the diff.
 ## Production deploys
 
 Merging to `main` deploys production. The `.github/workflows/deploy.yml` workflow runs tests, typecheck
-and lint, applies D1 migrations (`pnpm db:migrate:remote`), then runs `pnpm deploy` (sync, then web).
+and lint, applies D1 migrations (`pnpm db:migrate:remote`, `pnpm db:migrate:auth:remote`), then runs `pnpm deploy`
+(sync, account, then web).
 Deploys run one at a time and are never cancelled partway. Run it by hand ("Deploy production" in the
 Actions tab) only for an emergency. Production migrations run while the old code is still serving, so keep
 each migration compatible with the code before it: add columns and tables first, and remove old ones in a
@@ -129,8 +139,9 @@ and migrations can be previewed against real data without touching production. T
    staging binding points at a production resource.
 3. `pnpm stage:seed --if-empty` copies production into staging if staging has no events yet. Production is
    only exported, never written.
-4. `pnpm db:migrate:stage` applies the PR's migrations to staging only.
-5. Deploys `ftcref-sync-stage`, then `ftcref-web-stage`.
+4. `pnpm db:migrate:stage` and `pnpm db:migrate:auth:stage` apply the PR's migrations to staging only. The
+   staging accounts DB is never seeded from production, so no real accounts reach staging.
+5. Deploys `ftcref-sync-stage`, then `ftcref-account-stage`, then `ftcref-web-stage`.
 6. Re-syncs any events listed as `stage-resync: 2026/KZASN1` lines in the PR body, using the PR's sync code.
 
 **Staging data.** The staging sync Worker has no cron, so staging doesn't poll the FTC API on its own.
@@ -152,6 +163,17 @@ its migrations and re-syncs back.
   `ADMIN_TOKEN` and uses it for `stage-resync`.
 - FTC API credentials for the staging sync Worker. From `apps/sync`, run
   `wrangler secret put FTC_API_USER --env staging`, then the same for `FTC_API_TOKEN`.
+
+### Accounts setup (owner)
+
+- Production D1, once: `wrangler d1 create ftcref-auth`, then put its id in `apps/account/wrangler.jsonc`
+  in place of `__PROD_AUTH_D1_ID__`. `deploy.yml` refuses to run while a `__PROD_` placeholder is left.
+- OAuth apps, one per environment, with callback `https://<host>/api/auth/callback/google` or `.../github`:
+  a Google OAuth client (scope `openid` only) and a GitHub OAuth app (no extra scopes needed).
+- Secrets, from `apps/account` (add `--env staging` for staging): `wrangler secret put BETTER_AUTH_SECRET`
+  (a long random string), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`,
+  `GITHUB_CLIENT_SECRET`. Without `BETTER_AUTH_SECRET` the Worker answers 503 and `/login` says sign-in
+  is unavailable; a provider shows up only once both its secrets are set.
 
 ## Data terms
 

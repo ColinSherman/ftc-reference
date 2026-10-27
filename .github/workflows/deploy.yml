@@ -31,7 +31,13 @@ jobs:
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm lint
+      # A production id still left as a placeholder (e.g. ftcref-auth before the owner created it) would
+      # fail halfway through the deploy; stop before touching anything instead.
+      - name: Check production ids are filled in
+        run: "! grep -n '__PROD_' apps/*/wrangler.jsonc"
       # Migrations first: the new code may query tables or columns they add.
       - run: pnpm db:migrate:remote
+      - run: pnpm db:migrate:auth:remote
       # Sync before web, so the data the new pages expect is being written by the time they go live.
+      # Account before web, so web's ACCOUNT service binding points at a Worker that exists.
       - run: pnpm deploy

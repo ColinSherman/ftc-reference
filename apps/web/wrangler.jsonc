@@ -27,6 +27,8 @@
   // the staging env below sets its own.
   "vars": { "ENV_NAME": "production" },
   "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-sync-jobs" }] },
+  // Sign-in and account data live in ftcref-account (apps/account); this Worker only forwards to it.
+  "services": [{ "binding": "ACCOUNT", "service": "ftcref-account" }],
 
   // `wrangler deploy --env staging` -> stage.ftc-reference.com. Separate Worker AND separate data: it reads
   // the staging D1/KV that ftcref-sync-stage writes (a copy of production, see scripts/stage-seed.mjs).
@@ -50,7 +52,8 @@
       "version_metadata": { "binding": "CF_VERSION" },
       "kv_namespaces": [{ "binding": "CACHE_VER", "id": "3e819b0648c04641a586463e186bbe5b" }],
       "vars": { "ENV_NAME": "staging" },
-      "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-stage-sync-jobs" }] }
+      "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-stage-sync-jobs" }] },
+      "services": [{ "binding": "ACCOUNT", "service": "ftcref-account-stage" }]
     }
   }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Make sure the staging D1, KV namespace and queues exist, and that both wrangler.jsonc files point at
+// Make sure the staging D1s, KV namespace and queues exist, and that every wrangler.jsonc points at
 // them. Idempotent: run before every staging deploy (CI does). Needs CLOUDFLARE_API_TOKEN.
 //
 // The committed configs may still hold the __STAGE_*_ID__ placeholders; this fills them in the working
@@ -11,22 +11,22 @@ import {
   CONFIGS,
   PLACEHOLDER,
   readJsonc,
-  STAGE_DB,
+  STAGE_D1S,
   STAGE_KV,
   STAGE_QUEUES,
   wrangler,
 } from "./stage-lib.mjs";
 
-function d1Id() {
+function d1Id(name) {
   const find = () =>
-    JSON.parse(wrangler(["d1", "list", "--json"], { quiet: true })).find((d) => d.name === STAGE_DB);
+    JSON.parse(wrangler(["d1", "list", "--json"], { quiet: true })).find((d) => d.name === name);
   let db = find();
   if (!db) {
-    console.log(`creating D1 ${STAGE_DB}`);
-    wrangler(["d1", "create", STAGE_DB]);
+    console.log(`creating D1 ${name}`);
+    wrangler(["d1", "create", name]);
     db = find();
   }
-  if (!db) throw new Error(`D1 ${STAGE_DB} not found after create`);
+  if (!db) throw new Error(`D1 ${name} not found after create`);
   return db.uuid;
 }
 
@@ -56,24 +56,24 @@ function ensureQueues() {
   }
 }
 
-const ids = { d1: d1Id(), kv: kvId() };
+const d1 = Object.fromEntries(STAGE_D1S.map((name) => [name, d1Id(name)]));
+const kv = kvId();
 ensureQueues();
 
 let filled = false;
 for (const path of CONFIGS) {
   const stage = boundIds(readJsonc(path)).staging;
-  for (const [kind, bound] of [
-    ["d1", stage.d1.map((d) => d.id)],
-    ["kv", stage.kv],
-  ]) {
-    for (const id of bound) {
-      if (id === PLACEHOLDER[kind]) continue;
-      if (id !== ids[kind])
-        throw new Error(`${path}: staging ${kind} id ${id} is not ${STAGE_DB}/${STAGE_KV} (${ids[kind]})`);
-    }
+  for (const { name, id } of stage.d1) {
+    if (id === PLACEHOLDER.d1[name]) continue;
+    if (id !== d1[name]) throw new Error(`${path}: staging D1 ${name} id ${id} is not ${d1[name]}`);
+  }
+  for (const id of stage.kv) {
+    if (id === PLACEHOLDER.kv) continue;
+    if (id !== kv) throw new Error(`${path}: staging KV id ${id} is not ${STAGE_KV} (${kv})`);
   }
   const src = readFileSync(path, "utf8");
-  const next = src.replaceAll(PLACEHOLDER.d1, ids.d1).replaceAll(PLACEHOLDER.kv, ids.kv);
+  let next = src.replaceAll(PLACEHOLDER.kv, kv);
+  for (const name of STAGE_D1S) next = next.replaceAll(PLACEHOLDER.d1[name], d1[name]);
   if (next !== src) {
     writeFileSync(path, next);
     filled = true;
@@ -81,7 +81,7 @@ for (const path of CONFIGS) {
 }
 
 assertStagingIsolated();
-console.log(`staging D1 ${STAGE_DB} = ${ids.d1}`);
-console.log(`staging KV ${STAGE_KV} = ${ids.kv}`);
+for (const name of STAGE_D1S) console.log(`staging D1 ${name} = ${d1[name]}`);
+console.log(`staging KV ${STAGE_KV} = ${kv}`);
 if (filled)
-  console.log(`Filled placeholders in the working tree. Commit these ids into ${CONFIGS.join(" and ")}.`);
+  console.log(`Filled placeholders in the working tree. Commit these ids into ${CONFIGS.join(", ")}.`);
