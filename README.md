@@ -13,7 +13,7 @@ Fast, dense FIRST Tech Challenge stats and scouting, styled like Baseball-Refere
 | `apps/sync` | `ftcref-sync` Worker: cron planner → Queue → jobs that write D1, archive raw responses to R2, and bump cache versions in KV. |
 | `apps/web` | `ftcref-web` Worker: Hono JSX server-rendered HTML, near-zero client JS, version-keyed edge cache. |
 | `apps/account` | `ftcref-account` Worker: sign-in (Better Auth, Google + GitHub) and account data in its own D1 (`AUTH_DB`). No public URL: `ftcref-web` forwards `/api/auth/*` and `/api/account/*` to it over the `ACCOUNT` service binding and renders `/login` and `/account` itself, so the public Worker never loads auth code or reads a session. |
-| `packages/db/auth-migrations` | Schema for the accounts D1 (Better Auth's tables). Holds no email, name, photo, provider tokens, IP or user agent; see `docs/auth-plan.md`. |
+| `packages/db/auth-migrations` | Schema for the accounts D1 (Better Auth's tables, plus `api_key`: hashes only). Holds no email, name, photo, provider tokens, IP or user agent; see `docs/auth-plan.md`. |
 | `scripts/mock-ftc-api.mjs` | Local mock of the FTC API (one synthetic BIOBUZZ event) for end-to-end testing. |
 
 ## How sync works
@@ -80,7 +80,11 @@ curl "localhost:8787/__scheduled?cron=*+*+*+*+*"     # run the per-minute planne
 
 Accounts need no OAuth apps locally: `dev:account` runs with `ENV_NAME=local`, which turns on a fixed dev
 user and secret that exist only in local mode. Without it running, `/login` says sign-in is unavailable and
-everything else works.
+everything else works. Run `pnpm db:migrate:auth:local` once (and after pulling a new auth migration).
+
+**API keys:** create one on `/account`, then call
+`curl -H "Authorization: Bearer ftcr_…" localhost:8788/api/v1/me`. `ftcref-web` serves `/api/v1/*` and asks
+`ftcref-account` (`GET /internal/verify-key`) whose key it is; see `docs/auth-plan.md` Phase 2.
 
 `pnpm test` runs the unit tests, `pnpm typecheck` runs the type checker, and `pnpm lint` runs Biome.
 

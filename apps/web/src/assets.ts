@@ -147,6 +147,8 @@ footer .fl-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-si
 .sso-github{background:#24292f;color:#fff;border-color:var(--gh-line)}.sso-github:hover{filter:brightness(1.15)}
 .sso-dev{background:var(--head);color:var(--fg);border-color:var(--frame);border-style:dashed}
 .ok{color:var(--win);font-weight:bold}.err{color:var(--red);font-weight:bold}
+.newkey{border:1px solid var(--win);background:var(--win-bg);padding:4px 12px;margin:8px 0 12px}.newkey>code{display:block;font-size:14px;padding:6px 8px;background:var(--bg);word-break:break-all;user-select:all}.newkey .note code{word-break:break-all}
+.st.keys{width:auto;margin:6px 0 10px}.st.keys td{padding:3px 8px}.st.keys form{margin:0}.st.keys .go{font-size:12px;padding:1px 6px}
 .prose{max-width:720px;line-height:1.55}.prose li{margin:3px 0}.prose code{font-size:13px;background:var(--head);padding:0 3px}
 @media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:23px}tr.mhide{display:none}.st th,.st td{padding:3px 5px}}
 `.replace(/\n/g, "");

@@ -4,6 +4,7 @@ import type { Env } from "./env";
 import { pageSizeOf } from "./paging";
 import { accountRoutes } from "./routes/account";
 import { adminRoutes } from "./routes/admin";
+import { apiRoutes } from "./routes/api";
 import { avatarRoutes } from "./routes/avatar";
 import { channelRoutes } from "./routes/channels";
 import { eventRoutes } from "./routes/event";
@@ -84,6 +85,7 @@ app.get("/favicon.svg", favicon);
 app.get("/favicon.ico", favicon);
 
 app.route("/", accountRoutes);
+app.route("/", apiRoutes);
 app.route("/a", avatarRoutes);
 app.route("/", seoRoutes);
 app.route("/", mediaRoutes);
