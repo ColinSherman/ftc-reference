@@ -11,6 +11,7 @@ import { assertStagingIsolated, PROD_DB, STAGE_DB, splitDump, wrangler } from ".
 
 // ~25 MB of SQL per import request: about 1 s of SQLite work locally, well inside D1's limit.
 const CHUNK_CHARS = 25_000_000;
+const IMPORT_TRIES = 3;
 
 assertStagingIsolated();
 const stage = (args, opts) => wrangler([...args, "--env", "staging"], opts);
@@ -45,12 +46,23 @@ const tables = stageQuery(
 console.log(`dropping ${tables.length} staging tables`);
 for (const t of tables) stageQuery(`DROP TABLE IF EXISTS "${t.replaceAll('"', '""')}"`);
 
-// Import in pieces of whole statements; the dump in one request exceeds D1's CPU limit. A failure
-// part-way leaves staging half-filled: rerun, the reset above clears it.
+// Import in pieces of whole statements; the dump in one request exceeds D1's CPU limit. Parts are
+// idempotent, so a failed one is retried: wrangler sometimes reports "Not currently importing
+// anything." for an import that completed. A part failing every try leaves staging half-filled:
+// rerun, the reset above clears it.
 const parts = await splitDump(dump, dir, CHUNK_CHARS);
 for (const [i, part] of parts.entries()) {
-  console.log(`importing into ${STAGE_DB}: part ${i + 1}/${parts.length}`);
-  stage(["d1", "execute", STAGE_DB, "--remote", "--yes", "--file", part]);
+  for (let attempt = 1; ; attempt++) {
+    console.log(
+      `importing into ${STAGE_DB}: part ${i + 1}/${parts.length}${attempt > 1 ? ` (try ${attempt})` : ""}`,
+    );
+    try {
+      stage(["d1", "execute", STAGE_DB, "--remote", "--yes", "--file", part]);
+      break;
+    } catch (err) {
+      if (attempt === IMPORT_TRIES) throw err;
+    }
+  }
 }
 
 // Migrations this branch adds on top of production's schema.

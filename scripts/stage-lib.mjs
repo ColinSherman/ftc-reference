@@ -96,6 +96,8 @@ export function assertStagingIsolated() {
  * import request stays inside D1's per-request CPU limit (one 1 GB import gets the database reset).
  * Each file commits on its own. The dump's leading PRAGMAs are repeated at the top of every file, and
  * each CREATE INDEX gets a file to itself: indexing a big table is a request's worth of work alone.
+ * Statements are made idempotent (INSERT OR IGNORE, IF NOT EXISTS; every table has a primary key) so
+ * a file can be imported again after wrangler reports a failure for an import that in fact landed.
  * Streams the dump (it outgrows a JS string). Resolves to the file paths, in import order.
  */
 export async function splitDump(dump, dir, maxChars) {
@@ -119,7 +121,11 @@ export async function splitDump(dump, dir, maxChars) {
     // A statement ends at a line ending in `;` outside a string literal ('' escapes keep parity).
     for (let i = 0; i < line.length; i++) if (line.charCodeAt(i) === 39) inStr = !inStr;
     if (inStr || !line.trimEnd().endsWith(";")) continue;
-    const sql = stmt.join("\n");
+    const sql = stmt
+      .join("\n")
+      .replace(/^INSERT INTO /, "INSERT OR IGNORE INTO ")
+      .replace(/^CREATE TABLE (?!IF NOT EXISTS )/, "CREATE TABLE IF NOT EXISTS ")
+      .replace(/^CREATE (UNIQUE )?INDEX (?!IF NOT EXISTS )/, "CREATE $1INDEX IF NOT EXISTS ");
     stmt = [];
     if (!files.length && !part.length && /^PRAGMA /i.test(sql)) {
       prelude.push(sql);
