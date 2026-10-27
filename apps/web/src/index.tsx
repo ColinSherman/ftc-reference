@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { FAVICON_SVG } from "./assets";
 import type { Env } from "./env";
 import { pageSizeOf } from "./paging";
+import { accountRoutes } from "./routes/account";
 import { adminRoutes } from "./routes/admin";
 import { avatarRoutes } from "./routes/avatar";
 import { channelRoutes } from "./routes/channels";
@@ -82,6 +83,7 @@ const favicon = () =>
 app.get("/favicon.svg", favicon);
 app.get("/favicon.ico", favicon);
 
+app.route("/", accountRoutes);
 app.route("/a", avatarRoutes);
 app.route("/", seoRoutes);
 app.route("/", mediaRoutes);

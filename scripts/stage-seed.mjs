@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Replace the staging D1 with a copy of production, then apply this checkout's migrations on top.
 // Production is only exported (read); every write targets ftcref-stage. Needs CLOUDFLARE_API_TOKEN.
+// Accounts are in their own D1s (ftcref-auth / ftcref-stage-auth), which this never reads or copies:
+// production users and sessions stay out of staging.
 //
 //   node scripts/stage-seed.mjs             copy now (wipes staging)
 //   node scripts/stage-seed.mjs --if-empty  copy only when staging has no events yet (CI uses this)

@@ -8,7 +8,7 @@ export const legalRoutes = new Hono<{ Bindings: Env }>();
 /** Forwarded to the owner's inbox by Cloudflare Email Routing (set up on the ftc-reference.com zone). */
 export const CONTACT_EMAIL = "contact@ftc-reference.com";
 export const REPO_URL = "https://github.com/ColinSherman/ftc-reference";
-const UPDATED = "October 22, 2026";
+const UPDATED = "October 26, 2026";
 
 const Mail = () => <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>;
 
@@ -61,8 +61,8 @@ legalRoutes.get("/privacy", (c) =>
           <p class="note">Last updated {UPDATED}</p>
           <p>
             FTC-Reference ("the site", "we") is a free, non-commercial fan site for <i>FIRST</i> Tech
-            Challenge statistics. We collect as little as we can. There are no accounts, no ads, and no
-            analytics or tracking scripts.
+            Challenge statistics. We collect as little as we can. You never need an account to use the site,
+            and there are no ads and no analytics or tracking scripts.
           </p>
 
           <h2>What we store</h2>
@@ -83,6 +83,30 @@ legalRoutes.get("/privacy", (c) =>
             </li>
           </ul>
 
+          <h2>Accounts (optional)</h2>
+          <p>
+            You can sign in with Google or GitHub to use account features such as API keys. Accounts are for
+            people 13 and older. When you sign in we ask those services for the least they offer (Google: only
+            an ID; GitHub: only your public profile) and keep:
+          </p>
+          <ul>
+            <li>which service you used and the ID it gives us for you;</li>
+            <li>
+              a handle (your GitHub username, or a generated one for Google) that you can change, and when the
+              account was made;
+            </li>
+            <li>
+              while you're signed in, a session: a random token, stored in the{" "}
+              <code>ftcref.session_token</code> cookie and on our side, that expires after 30 days. A
+              short-lived <code>ftcref.session_data</code> cookie saves looking it up on every page.
+            </li>
+          </ul>
+          <p>
+            We don't keep your email address, name, profile photo, IP address, browser details, or the access
+            tokens Google or GitHub return. Expired sessions are deleted daily. You can delete your account at
+            any time from the Account page; that removes everything above immediately.
+          </p>
+
           <h2>What our providers see</h2>
           <ul>
             <li>
@@ -100,6 +124,14 @@ legalRoutes.get("/privacy", (c) =>
               <a href="https://policies.google.com/privacy">YouTube/Google</a>).
             </li>
             <li>
+              <b>Google and GitHub.</b> If you sign in, you do it on their site, and their privacy policies
+              apply (<a href="https://policies.google.com/privacy">Google</a>,{" "}
+              <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">
+                GitHub
+              </a>
+              ). They see that you signed in to FTC-Reference.
+            </li>
+            <li>
               <b>Email.</b> Messages to <Mail /> are forwarded by Cloudflare Email Routing to a personal inbox
               and kept only as long as needed to answer them.
             </li>
@@ -115,16 +147,17 @@ legalRoutes.get("/privacy", (c) =>
           <h2>Children</h2>
           <p>
             Many FTC participants are minors. The site does not ask for personal information, and we do not
-            knowingly collect it from children under 13. Please don't put a student's full name in the
-            optional submission field; a team number is plenty. If you believe a child's information is on the
-            site, email <Mail /> and we'll remove it.
+            knowingly collect it from children under 13. Accounts are for ages 13 and up, and even then hold
+            no email, name or photo. Please don't put a student's full name in the optional submission field;
+            a team number is plenty. If you believe a child's information is on the site, email <Mail /> and
+            we'll remove it.
           </p>
 
           <h2>Your choices</h2>
           <p>
-            You can clear the cookies at any time in your browser; the site works without them. To have a
-            submission or anything else about you removed, email <Mail />. We don't sell or share data with
-            anyone.
+            You can clear the cookies at any time in your browser; the site works without them (clearing the
+            session cookie signs you out). To have a submission or anything else about you removed, email{" "}
+            <Mail />. We don't sell or share data with anyone.
           </p>
 
           <h2>Changes</h2>
@@ -173,6 +206,13 @@ legalRoutes.get("/terms", (c) =>
             </li>
             <li>Don't use the site to harass anyone, or to break the law or the rules of the competition.</li>
           </ul>
+
+          <h2>Accounts</h2>
+          <p>
+            Accounts are optional and for people 13 or older. Sign in only with your own Google or GitHub
+            account, and keep any API keys you create to yourself. We may suspend an account that breaks these
+            terms. You can delete yours at any time from the Account page.
+          </p>
 
           <h2>Submissions</h2>
           <p>

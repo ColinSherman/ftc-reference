@@ -1,0 +1,14 @@
+{
+  "name": "@ftcref/account",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8789 --persist-to ../../.wrangler/state --var ENV_NAME:local --var AUTH_URL:http://localhost:8788",
+    "deploy": "wrangler deploy --minify",
+    "deploy:stage": "wrangler deploy --minify --env staging"
+  },
+  "dependencies": {
+    "better-auth": "^1.7.13",
+    "hono": "^4.13.13"
+  }
+}

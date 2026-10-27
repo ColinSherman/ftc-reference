@@ -1,0 +1,53 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ftcref-account",
+  // Personal Cloudflare account — never the team 4201 account.
+  "account_id": "a92ff6c4b72094e5030585f2363b940a",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // No public URL: only ftcref-web reaches this Worker, through its ACCOUNT service binding.
+  "workers_dev": false,
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  // Accounts live in their own D1, bound to this Worker only. The stats DB (and so stage-seed's copy of
+  // production) never holds user data.
+  "d1_databases": [
+    {
+      "binding": "AUTH_DB",
+      "database_name": "ftcref-auth",
+      // Production accounts DB (created by the owner with `wrangler d1 create ftcref-auth`).
+      "database_id": "2b659278-dbea-4e47-ac24-c28baf2b766c",
+      "migrations_dir": "../../packages/db/auth-migrations"
+    }
+  ],
+  // Per-IP limit on sign-in and account writes (index.ts). namespace_id is unique per account.
+  "ratelimits": [{ "name": "AUTH_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
+  "vars": { "ENV_NAME": "production", "AUTH_URL": "https://ftc-reference.com" },
+  // Daily purge of expired sessions and sign-in state.
+  "triggers": { "crons": ["17 9 * * *"] },
+  // Secrets (owner sets them with `wrangler secret put`, per environment): BETTER_AUTH_SECRET,
+  // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET. Without
+  // BETTER_AUTH_SECRET the Worker answers 503 and the site shows sign-in as unavailable.
+
+  // vars/triggers/ratelimits are not inherited: staging sets its own.
+  "env": {
+    "staging": {
+      "name": "ftcref-account-stage",
+      "account_id": "a92ff6c4b72094e5030585f2363b940a",
+      "workers_dev": false,
+      "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+      "d1_databases": [
+        {
+          "binding": "AUTH_DB",
+          "database_name": "ftcref-stage-auth",
+          "database_id": "__STAGE_AUTH_D1_ID__",
+          "migrations_dir": "../../packages/db/auth-migrations"
+        }
+      ],
+      "ratelimits": [
+        { "name": "AUTH_LIMIT", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
+      ],
+      "vars": { "ENV_NAME": "staging", "AUTH_URL": "https://stage.ftc-reference.com" },
+      "triggers": { "crons": ["17 9 * * *"] }
+    }
+  }
+}
