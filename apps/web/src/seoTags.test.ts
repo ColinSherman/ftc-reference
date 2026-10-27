@@ -10,7 +10,7 @@ describe("robotsTxt", () => {
     const r = robotsTxt("ftc-reference.com");
     expect(r).toMatch(/User-agent: ClaudeBot\n(User-agent: .+\n)*Disallow: \/\n/);
     expect(r).toContain("Content-Signal: search=yes, ai-input=yes, ai-train=no");
-    for (const p of ["/videos/", "/admin", "/search", "/*?stats=", "/*&per="])
+    for (const p of ["/videos/", "/admin", "/search", "/api/", "/account", "/login", "/*?stats=", "/*&per="])
       expect(r).toContain(`Disallow: ${p}\n`);
     expect(r).toContain("Sitemap: https://ftc-reference.com/sitemap.xml");
   });

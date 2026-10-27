@@ -31,11 +31,20 @@ export async function cached(
   if (hit) return hit;
 
   const res = await render();
-  if (res.status === 200) {
+  if (shareable(res)) {
     res.headers.set("Cache-Control", `public, max-age=30, s-maxage=${opts.ttl}, stale-while-revalidate=300`);
     c.executionCtx.waitUntil(cache.put(key, res.clone()));
   }
   return res;
+}
+
+/**
+ * Safe to serve to every visitor. A response that sets a cookie or says it's private is one
+ * visitor's (a signed-in page, say), so it's never stored, even if a route wrapped it by mistake.
+ */
+export function shareable(res: Response): boolean {
+  if (res.status !== 200 || res.headers.has("Set-Cookie")) return false;
+  return !/\b(private|no-store)\b/.test(res.headers.get("Cache-Control") ?? "");
 }
 
 /** Versioned pages can live long at the edge; a data change produces a new key. */

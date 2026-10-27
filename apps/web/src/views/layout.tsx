@@ -65,6 +65,10 @@ export function Layout(props: {
                 Off-season
                 <i />
               </a>
+              {/* Same link for everyone, signed in or not, so cached pages stay shared. */}
+              <a class="acct" href="/account" rel="nofollow">
+                Account
+              </a>
             </div>
           </div>
           <main>{props.children}</main>

@@ -15,6 +15,8 @@ export interface Env {
   ENV_NAME?: string;
   /** The sync Worker's job queue, for admin re-syncs. Messages must match apps/sync SyncMessage. */
   SYNC_QUEUE?: Queue<ResyncMessage>;
+  /** ftcref-account Worker (sign-in, sessions). The only way this Worker touches accounts. */
+  ACCOUNT?: Fetcher;
 }
 
 export type ResyncMessage = { job: "eventMatches" | "awards"; season: number; code: string; force: true };

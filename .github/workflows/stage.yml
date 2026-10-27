@@ -42,6 +42,8 @@ jobs:
       - run: pnpm stage:seed --if-empty
       # This branch's migrations land on staging only; production gets them on merge (deploy.yml).
       - run: pnpm db:migrate:stage
+      # Accounts DB (ftcref-stage-auth): its own migrations, never seeded from production.
+      - run: pnpm db:migrate:auth:stage
       - name: Deploy staging sync Worker
         id: sync
         working-directory: apps/sync
@@ -54,6 +56,8 @@ jobs:
         env:
           STAGE_ADMIN_TOKEN: ${{ secrets.STAGE_ADMIN_TOKEN }}
         run: printf '%s' "$STAGE_ADMIN_TOKEN" | npx wrangler secret put ADMIN_TOKEN --env staging
+      # Before web: web's ACCOUNT binding needs ftcref-account-stage to exist.
+      - run: pnpm --filter @ftcref/account deploy:stage
       - run: pnpm --filter @ftcref/web deploy:stage
       # `stage-resync: 2026/KZASN1` lines in the PR body re-run those events through this branch's sync code.
       - run: node scripts/stage-resync.mjs
