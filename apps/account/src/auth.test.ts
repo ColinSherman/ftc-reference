@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { getMigrations } from "better-auth/db/migration";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authOptions } from "./auth";
+import { authOptions, isAdminAccount } from "./auth";
 import type { Env } from "./env";
 import { app, fromSite, purgeExpired } from "./index";
 import { touchKey, verifyKey } from "./keys";
@@ -485,5 +485,46 @@ describe("API keys", () => {
     expect(del.headers.get("location")).toBe("/login?deleted=1");
     expect(rows(db, "api_key")).toHaveLength(0);
     expect((await verify(env, key)).status).toBe(401);
+  });
+});
+
+describe("admin role", () => {
+  const whoami = (env: Env, jar: Jar) => req(env, jar, "/internal/whoami");
+
+  it("comes from ADMIN_ACCOUNTS, by provider and the provider's own id", () => {
+    const env = makeEnv({ ADMIN_ACCOUNTS: " github:4201 , google:99" }).env;
+    const is = (providerId: string, accountId: string) => isAdminAccount(env, [{ providerId, accountId }]);
+    expect(is("github", "4201")).toBe(true);
+    expect(is("google", "99")).toBe(true);
+    expect(is("google", "4201")).toBe(false);
+    expect(is("github", "42")).toBe(false);
+    expect(isAdminAccount(makeEnv().env, [{ providerId: "github", accountId: "4201" }])).toBe(false);
+    // Dev sign-in is an admin locally, and only locally.
+    const dev = [{ providerId: "credential", accountId: "u" }];
+    expect(isAdminAccount(makeEnv({ ENV_NAME: "local" }).env, dev)).toBe(true);
+    expect(isAdminAccount(env, dev)).toBe(false);
+  });
+
+  it("whoami: 401 signed out; admin only for listed accounts; me says so too", async () => {
+    const { env } = makeEnv({ ADMIN_ACCOUNTS: "github:4201" });
+    expect((await whoami(env, new Jar())).status).toBe(401);
+    stubProviders();
+    const gh = new Jar();
+    await signIn(env, gh, "github");
+    expect(await (await whoami(env, gh)).json()).toEqual({ handle: "octo-kid", admin: true });
+    expect(await (await req(env, gh, "/api/account/me")).json()).toMatchObject({ user: { admin: true } });
+    const google = new Jar();
+    await signIn(env, google, "google");
+    expect(await (await whoami(env, google)).json()).toEqual({ handle: "user-101234", admin: false });
+  });
+
+  it("whoami sees a revoked session at once, despite the session cookie cache", async () => {
+    const { db, env } = makeEnv({ ADMIN_ACCOUNTS: "github:4201" });
+    stubProviders();
+    const jar = new Jar();
+    await signIn(env, jar, "github");
+    expect(jar.header).toContain("ftcref.session_data=");
+    db.exec(`DELETE FROM "session"`);
+    expect((await whoami(env, jar)).status).toBe(401);
   });
 });

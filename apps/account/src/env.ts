@@ -9,6 +9,11 @@ export interface Env {
   AUTH_LIMIT?: RateLimit;
   /** Per-key limit on API requests. */
   KEY_LIMIT?: RateLimit;
+  /**
+   * Who may use /admin: comma-separated `provider:id` (e.g. `github:44042669`), the provider's own
+   * user id, so it survives account deletion and is the same on staging and production.
+   */
+  ADMIN_ACCOUNTS?: string;
   BETTER_AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;

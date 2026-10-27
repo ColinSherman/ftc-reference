@@ -25,7 +25,13 @@
     { "name": "AUTH_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
     { "name": "KEY_LIMIT", "namespace_id": "1003", "simple": { "limit": 120, "period": 60 } }
   ],
-  "vars": { "ENV_NAME": "production", "AUTH_URL": "https://ftc-reference.com" },
+  // ADMIN_ACCOUNTS: who may use /admin, as `provider:id` (index.ts /internal/whoami). github:44042669 is
+  // the owner (ColinSherman). Add Google with `google:<sub>`.
+  "vars": {
+    "ENV_NAME": "production",
+    "AUTH_URL": "https://ftc-reference.com",
+    "ADMIN_ACCOUNTS": "github:44042669"
+  },
   // Daily purge of expired sessions and sign-in state.
   "triggers": { "crons": ["17 9 * * *"] },
   // Secrets (owner sets them with `wrangler secret put`, per environment): BETTER_AUTH_SECRET,
@@ -51,7 +57,11 @@
         { "name": "AUTH_LIMIT", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } },
         { "name": "KEY_LIMIT", "namespace_id": "1004", "simple": { "limit": 120, "period": 60 } }
       ],
-      "vars": { "ENV_NAME": "staging", "AUTH_URL": "https://stage.ftc-reference.com" },
+      "vars": {
+        "ENV_NAME": "staging",
+        "AUTH_URL": "https://stage.ftc-reference.com",
+        "ADMIN_ACCOUNTS": "github:44042669"
+      },
       "triggers": { "crons": ["17 9 * * *"] }
     }
   }

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { type Auth, authFor, DEV_USER, isLocal, providers } from "./auth";
+import { type Auth, authFor, DEV_USER, isAdminAccount, isLocal, providers } from "./auth";
 import type { Env } from "./env";
 import { createKey, deleteKeysOf, listKeys, revokeKey, touchKey, verifyKey } from "./keys";
 
@@ -11,8 +11,9 @@ import { createKey, deleteKeysOf, listKeys, revokeKey, touchKey, verifyKey } fro
  *
  * `/api/auth/*` is Better Auth (OAuth redirects and callbacks). `/api/account/*` is ours: plain form
  * posts from the web pages, answered with 303 redirects, plus `me` for the account page.
- * `/internal/verify-key` checks API keys for ftcref-web's `/api/v1`; ftcref-web never forwards
- * `/internal/*`, and the answer only says whose key it is, which the key's holder already knows.
+ * `/internal/*` answers ftcref-web only (it never forwards those paths): `verify-key` checks API keys
+ * for `/api/v1`, and `whoami` says whether a session cookie belongs to an admin. Each answer only
+ * tells the caller about the key or cookie it already holds.
  */
 type Ctx = { Bindings: Env; Variables: { auth: Auth } };
 const app = new Hono<Ctx>();
@@ -84,6 +85,7 @@ app.get("/api/account/me", async (c) => {
       handle: session.user.name,
       createdAt: session.user.createdAt,
       linked: accounts.map((a) => a.providerId),
+      admin: isAdminAccount(c.env, accounts),
     },
     keys: await listKeys(c.env.AUTH_DB, session.user.id),
     providers: providers(c.env),
@@ -185,6 +187,19 @@ app.get("/internal/verify-key", async (c) => {
   if (found.touch) c.executionCtx.waitUntil(touchKey(c.env.AUTH_DB, found.keyId));
   const { touch: _, ...owner } = found;
   return c.json(owner);
+});
+
+/**
+ * The signed-in user behind a session cookie, for ftcref-web's /admin: 200 `{ handle, admin }` or
+ * 401. Skips the 5-minute session cookie cache, so a sign-out or a removal from ADMIN_ACCOUNTS
+ * takes effect on the next admin request.
+ */
+app.get("/internal/whoami", async (c) => {
+  const headers = c.req.raw.headers;
+  const session = await c.var.auth.api.getSession({ headers, query: { disableCookieCache: true } });
+  if (!session) return c.json({ error: "signed_out" }, 401);
+  const accounts = await c.var.auth.api.listUserAccounts({ headers });
+  return c.json({ handle: session.user.name, admin: isAdminAccount(c.env, accounts) });
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));

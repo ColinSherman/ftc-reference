@@ -11,7 +11,7 @@ import {
   type YtVideo,
 } from "@ftcref/videos";
 import { Hono } from "hono";
-import { isAdmin, logIn, logOut } from "../admin";
+import { isAdmin } from "../admin";
 import { type AppContext, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
 import { Layout, Table } from "../views/layout";
 import { ytFor } from "../yt";
@@ -333,17 +333,6 @@ function Msg(props: { title: string; back: string; backLabel?: string }) {
 }
 
 // ----------------------------------------------------------------------------- admin review
-
-videoRoutes.post("/admin/login", async (c) => {
-  const f = await c.req.parseBody();
-  if (await logIn(c, String(f.token ?? ""))) return c.redirect("/admin");
-  return c.html(<Msg title="Wrong token" back="/admin" />, 401, noStore);
-});
-
-videoRoutes.post("/admin/logout", (c) => {
-  logOut(c);
-  return c.redirect("/");
-});
 
 videoRoutes.get("/admin/videos", async (c) => {
   if (!(await isAdmin(c))) return c.redirect("/admin");

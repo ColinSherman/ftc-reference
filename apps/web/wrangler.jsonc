@@ -33,7 +33,7 @@
   // `wrangler deploy --env staging` -> stage.ftc-reference.com. Separate Worker AND separate data: it reads
   // the staging D1/KV that ftcref-sync-stage writes (a copy of production, see scripts/stage-seed.mjs).
   // It must never bind a production resource. Ids are shared with apps/sync's staging env.
-  // Secrets are per-Worker: `wrangler secret put ADMIN_TOKEN --env staging` if you need /admin on stage.
+  // /admin needs no secret: admins sign in (ADMIN_ACCOUNTS in apps/account/wrangler.jsonc).
   "env": {
     "staging": {
       "name": "ftcref-web-stage",

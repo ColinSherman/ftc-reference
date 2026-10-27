@@ -34,8 +34,9 @@ The FTC API has no webhooks, so we poll, and poll cheaply.
 - Otherwise it fetches scores, rankings, teams and alliances, upserts everything, recomputes OPR and stats for the event, then bumps `event:{season}:{code}` in KV.
 - `Last-Modified` values are saved only after the data is written, so a failed write gets retried.
 
-**Observability:** log in at `/admin` (on either environment) with that Worker's `ADMIN_TOKEN`. The
-tag next to the tabs shows which environment you're on (PRODUCTION / STAGING / LOCAL).
+**Observability:** sign in with an admin account, then open `/admin` (on either environment). Admins are
+the Google or GitHub accounts listed in `ADMIN_ACCOUNTS` (`apps/account/wrangler.jsonc`, per environment;
+locally the dev sign-in user). The tag next to the tabs shows which environment you're on (PRODUCTION / STAGING / LOCAL).
 - **Health:** live polling freshness, FTC API errors, *FTC API credentials* (red when the newest
   401/403 is more recent than the last accepted request), *Repeated failures* (jobs that failed 3+ times
   in a row; 6 means retries are used up and the job is likely in the dead-letter queue), the daily
@@ -174,6 +175,9 @@ its migrations and re-syncs back.
   `__PROD_*` placeholder in any config, `deploy.yml` refuses to run until it is filled in.
 - OAuth apps, one per environment, with callback `https://<host>/api/auth/callback/google` or `.../github`:
   a Google OAuth client (scope `openid` only) and a GitHub OAuth app (no extra scopes needed).
+- Admins: add `provider:id` to `ADMIN_ACCOUNTS` in `apps/account/wrangler.jsonc` (both environments) and
+  merge. The id is the provider's user id: GitHub's numeric id (`https://api.github.com/users/<login>`)
+  or Google's `sub` (the `accountId` in the `account` table).
 - Secrets, from `apps/account` (add `--env staging` for staging): `wrangler secret put BETTER_AUTH_SECRET`
   (a long random string), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`,
   `GITHUB_CLIENT_SECRET`. Without `BETTER_AUTH_SECRET` the Worker answers 503 and `/login` says sign-in

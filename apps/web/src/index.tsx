@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { sameSitePost } from "./admin";
 import { FAVICON_SVG } from "./assets";
 import type { Env } from "./env";
 import { pageSizeOf } from "./paging";
@@ -83,6 +84,13 @@ const favicon = () =>
   });
 app.get("/favicon.svg", favicon);
 app.get("/favicon.ico", favicon);
+
+// Admin actions are form posts from the admin pages; refuse any that come from another site.
+app.use("/admin/*", async (c, next) => {
+  if (c.req.method === "POST" && !sameSitePost(c.req.raw.headers, new URL(c.req.url).origin))
+    return c.text("Forbidden", 403);
+  await next();
+});
 
 app.route("/", accountRoutes);
 app.route("/", apiRoutes);
