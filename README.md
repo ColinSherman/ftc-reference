@@ -166,8 +166,8 @@ its migrations and re-syncs back.
 
 ### Accounts setup (owner)
 
-- Production D1, once: `wrangler d1 create ftcref-auth`, then put its id in `apps/account/wrangler.jsonc`
-  in place of `__PROD_AUTH_D1_ID__`. `deploy.yml` refuses to run while a `__PROD_` placeholder is left.
+- Production D1 `ftcref-auth`: created once (its id is in `apps/account/wrangler.jsonc`). For a new
+  `__PROD_*` placeholder in any config, `deploy.yml` refuses to run until it is filled in.
 - OAuth apps, one per environment, with callback `https://<host>/api/auth/callback/google` or `.../github`:
   a Google OAuth client (scope `openid` only) and a GitHub OAuth app (no extra scopes needed).
 - Secrets, from `apps/account` (add `--env staging` for staging): `wrangler secret put BETTER_AUTH_SECRET`

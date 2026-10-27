@@ -14,8 +14,8 @@
     {
       "binding": "AUTH_DB",
       "database_name": "ftcref-auth",
-      // Created once by the owner (`wrangler d1 create ftcref-auth`); deploy.yml refuses a placeholder.
-      "database_id": "__PROD_AUTH_D1_ID__",
+      // Production accounts DB (created by the owner with `wrangler d1 create ftcref-auth`).
+      "database_id": "2b659278-dbea-4e47-ac24-c28baf2b766c",
       "migrations_dir": "../../packages/db/auth-migrations"
     }
   ],
