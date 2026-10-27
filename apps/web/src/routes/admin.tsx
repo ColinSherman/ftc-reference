@@ -2,7 +2,7 @@ import { ALL_SEASONS, CURRENT_SEASON, isSeason, seasonLabel } from "@ftcref/seas
 import { pacificDay } from "@ftcref/videos";
 import { Hono } from "hono";
 import type { Child } from "hono/jsx";
-import { isAdmin } from "../admin";
+import { adminUser, isAdmin } from "../admin";
 import { type AppContext, type Env, matchLabel, matchSlug } from "../env";
 import { Layout, Table } from "../views/layout";
 import { ytFor } from "../yt";
@@ -33,28 +33,24 @@ export function AdminNav(props: { active: "overview" | "videos" | "photos" | "ru
       <span class={`pill env-${props.env ?? "local"}`} title="Which deployment's data you are looking at">
         {props.env ?? "local"}
       </span>
-      <form method="post" action="/admin/logout" style="margin-left:auto">
-        <button type="submit" class="go">
-          Log out
-        </button>
-      </form>
+      <a href="/account" style="margin-left:auto">
+        Account
+      </a>
     </div>
   );
 }
 
-function LoginPage() {
+/** Shown at /admin to anyone who isn't a signed-in admin. */
+function NotAdminPage() {
   return (
     <Layout title="Admin">
-      <h1>Admin</h1>
-      <form method="post" action="/admin/login" class="filters" style="max-width:420px">
-        <label>
-          Admin token
-          <input name="token" type="password" required autocomplete="current-password" />
-        </label>
-        <button type="submit" class="go">
-          Log in
-        </button>
-      </form>
+      <div class="prose">
+        <h1>Admin</h1>
+        <p>
+          This area is for site admins. <a href="/login">Sign in</a> with an admin's Google or GitHub account,
+          then come back here. If you're signed in already, your account isn't an admin.
+        </p>
+      </div>
     </Layout>
   );
 }
@@ -89,7 +85,7 @@ function Check(props: { name: string; s: Status; children: Child }) {
 }
 
 adminRoutes.get("/admin", async (c) => {
-  if (!(await isAdmin(c))) return c.html(<LoginPage />, 200, noStore);
+  if (!(await adminUser(c))) return c.html(<NotAdminPage />, 403, noStore);
   return c.html(await overview(c), 200, noStore);
 });
 

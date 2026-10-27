@@ -24,7 +24,7 @@ type ApiKey = {
   expiresAt: string | null;
 };
 type Me = {
-  user: { handle: string; createdAt: string; linked: string[] } | null;
+  user: { handle: string; createdAt: string; linked: string[]; admin?: boolean } | null;
   keys?: ApiKey[];
   providers: Provider[];
   dev: boolean;
@@ -172,6 +172,12 @@ function accountPage(c: AppContext, who: Me & { user: NonNullable<Me["user"]> },
         <p>
           Signed in with {user.linked.map((p) => PROVIDER_NAME[p] ?? p).join(", ")} since{" "}
           {user.createdAt.slice(0, 10)}.
+          {user.admin && (
+            <>
+              {" "}
+              You're an admin: <a href="/admin">open the admin pages</a>.
+            </>
+          )}
         </p>
 
         <h2>Handle</h2>

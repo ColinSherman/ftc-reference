@@ -115,6 +115,21 @@ export function authFor(env: Env): Auth | null {
   return auth;
 }
 
+/**
+ * Whether a user with these sign-ins is an admin: one of them is listed in ADMIN_ACCOUNTS. Locally
+ * the dev sign-in user is an admin too, so /admin works with no setup.
+ */
+export function isAdminAccount(env: Env, accounts: { providerId: string; accountId: string }[]) {
+  if (isLocal(env) && accounts.some((a) => a.providerId === "credential")) return true;
+  const admins = new Set(
+    (env.ADMIN_ACCOUNTS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  return accounts.some((a) => admins.has(`${a.providerId}:${a.accountId}`));
+}
+
 /** Providers that have credentials in this environment, in display order. */
 export const providers = (env: Env) =>
   [

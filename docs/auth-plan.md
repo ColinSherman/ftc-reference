@@ -202,9 +202,22 @@ What shipped (`apps/account/src/keys.ts`, migration `0002_api_keys.sql`):
 - Bundle size and public-page latency compared with Phase 0 numbers.
 - Header still fits at 1024px and 1280px.
 
+## PR 3: admin role (done)
+
+`/admin` now needs a signed-in user whose sign-in is listed in the account Worker's `ADMIN_ACCOUNTS`
+var (`provider:id`, the provider's own user id, so it survives account deletion and matches across
+environments). It's config, not a database column, so granting admin is a reviewed change and fresh
+environments get the same admins. Locally, the dev sign-in user is an admin.
+
+- `ftcref-web` asks `ftcref-account` `GET /internal/whoami` on each admin request, passing only the
+  session cookie. That skips Better Auth's 5-minute cookie cache, so a sign-out or removal applies at
+  once. Admin POSTs also need `Sec-Fetch-Site: same-origin` (or a matching `Origin`).
+- Retired: the web Worker's `ADMIN_TOKEN`, the `ftcref_admin` cookie, `/admin/login`, `/admin/logout`.
+- Kept: the sync Worker's `ADMIN_TOKEN`. It's a machine credential for its `/admin/*` HTTP API
+  (CI's `stage-resync`), not a person's login.
+
 ## Follow-ups (not in these PRs)
 
-- Admin as a user role, retiring the `ADMIN_TOKEN` cookie.
 - Public data API endpoints behind the keys, with CORS (browser apps send `Authorization`, which
   needs a preflight) and a choice about caching shared data per key.
 - Per-user features (followed teams, saved filters), rendered client-side or on uncached routes only.
