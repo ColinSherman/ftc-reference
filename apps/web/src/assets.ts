@@ -24,14 +24,19 @@ a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
 h1,h2,h3{font-weight:bold;line-height:1.2;margin:.2em 0 .4em}
 /* Section headings in the brand colour, no rule: the Basketball-Reference treatment. */
 h1{font-size:28px;letter-spacing:-.3px}h2{font-size:21px;color:var(--sect);margin:1.3em 0 .35em}h3{font-size:16px;color:var(--sect)}
-:focus-visible{outline:2px solid var(--focus);outline-offset:1px}.top :focus-visible{outline-color:var(--brand-fg)}
-.top{background:var(--brand);color:var(--brand-fg)}
-.top .in{max-width:1200px;margin:0 auto;padding:6px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-.top a{color:var(--brand-fg)}.logo{font-size:22px;font-weight:bold;letter-spacing:-.6px}.logo b{color:var(--dot)}
-.top nav{display:flex;gap:16px;font-size:14px;font-weight:bold}
-.top form{margin-left:auto}
-.tt{font-size:12px;background:none;color:var(--brand-fg);border:1px solid rgba(255,255,255,.45);border-radius:2px;padding:2px 7px;cursor:pointer;white-space:nowrap}.tt:hover{background:rgba(255,255,255,.12)}.top input{padding:4px 7px;width:220px;max-width:50vw;border:1px solid #000;border-radius:2px}
-main{max-width:1200px;margin:0 auto;padding:10px 16px 40px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:1px}.bar :focus-visible{outline-color:var(--brand-fg)}
+/* Header, Sports-Reference style: logo, stacked wordmark and a wide search on the page colour, then a brand-coloured menu bar. */
+.hd .in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;gap:20px;align-items:center}
+.logo{display:flex;align-items:center;gap:9px;color:var(--fg);flex:none}.logo:hover{text-decoration:none}.logo svg{width:42px;height:42px;display:block}
+.wm{display:flex;flex-direction:column;line-height:1}.wm b{font-size:30px;letter-spacing:-1px;color:var(--sect)}.wm span{font-size:12.5px;font-weight:bold;letter-spacing:2.6px;text-transform:uppercase;margin-top:1px}
+.srch{flex:1;max-width:760px;position:relative;display:flex}
+.srch input{flex:1;min-width:0;padding:8px 12px;font-size:16px;background:var(--bg);color:var(--fg);border:2px solid var(--brand);border-right:0;border-radius:3px 0 0 3px}
+.srch input:focus-visible{outline:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 35%,transparent)}
+.srch button{padding:0 16px;font-weight:bold;background:var(--brand);color:var(--brand-fg);border:2px solid var(--brand);border-radius:0 3px 3px 0;cursor:pointer}.srch button:hover{filter:brightness(1.12)}
+.bar{background:var(--brand);color:var(--brand-fg)}.bar .in{padding:0 16px;gap:12px;min-height:36px;flex-wrap:wrap}
+.bar a{color:var(--brand-fg)}.bar nav{display:flex}.bar nav a{padding:8px 12px;font-size:14px;font-weight:bold}.bar nav a:first-child{margin-left:-12px}
+.bar nav a:hover{background:rgba(255,255,255,.14);text-decoration:none}.bar .tools{margin-left:auto;display:flex;gap:14px;align-items:center}
+.tt{font-size:12px;background:none;color:var(--brand-fg);border:1px solid rgba(255,255,255,.45);border-radius:2px;padding:2px 7px;cursor:pointer;white-space:nowrap}.tt:hover{background:rgba(255,255,255,.12)}main{max-width:1200px;margin:0 auto;padding:10px 16px 40px}
 .crumbs{font-size:12px;color:var(--muted);margin-bottom:4px}
 .bio{display:flex;flex-wrap:wrap;gap:4px 24px;margin:4px 0 10px}.bio div{white-space:nowrap}.bio b{color:var(--muted);font-weight:normal}
 .tabs{display:flex;flex-wrap:wrap;gap:2px 16px;font-size:14px;font-weight:bold;margin:6px 0;padding:4px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -139,7 +144,7 @@ form.shift{display:flex;flex-wrap:wrap;gap:3px;align-items:center}form.shift .go
 .seasons td.g{font-size:15px;font-weight:bold}
 footer{max-width:1200px;margin:0 auto;padding:12px 16px 30px;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}
 footer .fl-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13px}
-.acct{font-size:13px;white-space:nowrap}
+.acct{font-size:13px;white-space:nowrap;margin-left:auto}
 .signin{display:flex;flex-direction:column;gap:10px;margin:14px 0 18px;max-width:300px}
 .sso{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:40px;padding:0 12px;border:1px solid;border-radius:4px;font:500 14px/1 Roboto,var(--ff);letter-spacing:.25px;cursor:pointer;position:relative}
 .sso svg{width:20px;height:20px;position:absolute;left:12px}.sso:hover{filter:brightness(.96)}.sso:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
@@ -149,13 +154,13 @@ footer .fl-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-si
 .ok{color:var(--win);font-weight:bold}.err{color:var(--red);font-weight:bold}
 .newkey{border:1px solid var(--win);background:var(--win-bg);padding:4px 12px;margin:8px 0 12px}.newkey>code{display:block;font-size:14px;padding:6px 8px;background:var(--bg);word-break:break-all;user-select:all}.newkey .note code{word-break:break-all}
 .st.keys{width:auto;margin:6px 0 10px}.st.keys td{padding:3px 8px}.st.keys form{margin:0}.st.keys .go{font-size:12px;padding:1px 6px}
-.top form{position:relative}.sug{position:absolute;right:0;top:calc(100% + 3px);z-index:20;width:380px;max-width:calc(100vw - 32px);background:var(--bg);color:var(--fg);border:1px solid var(--frame);box-shadow:0 6px 18px rgba(0,0,0,.22);font-weight:normal;text-align:left}
-.sug[hidden]{display:none}.top .sug a{display:block;color:var(--fg);padding:4px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
+.sug{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:20;background:var(--bg);color:var(--fg);border:1px solid var(--frame);box-shadow:0 6px 18px rgba(0,0,0,.22);font-weight:normal;text-align:left}
+.sug[hidden]{display:none}.sug a{display:block;color:var(--fg);padding:4px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
 .sug a span{display:block;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}.sug a i{font-style:normal;color:var(--link);font-variant-numeric:tabular-nums}
-.top .sug a[aria-selected=true],.top .sug a:hover{background:var(--hi)}.sug b{font-weight:bold}
+.sug a[aria-selected=true],.sug a:hover{background:var(--hi)}.sug b{font-weight:bold}
 .sgh{padding:5px 10px 2px;font-size:11px;font-weight:bold;letter-spacing:.5px;text-transform:uppercase;color:var(--sect);border-top:1px solid var(--line)}.sgh:first-child{border-top:0}
 .prose{max-width:720px;line-height:1.55}.prose li{margin:3px 0}.prose code{font-size:13px;background:var(--head);padding:0 3px}
-@media (max-width:640px){.sug{left:0;width:auto;max-width:none}.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:23px}tr.mhide{display:none}.st th,.st td{padding:3px 5px}}
+@media (max-width:640px){.hd .in{flex-wrap:wrap;gap:10px 14px}.srch{order:9;flex-basis:100%;max-width:none}.logo svg{width:34px;height:34px}.wm b{font-size:25px}.bar .tools{gap:10px}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}h1{font-size:23px}tr.mhide{display:none}.st th,.st td{padding:3px 5px}}
 `.replace(/\n/g, "");
 
 /**
@@ -188,6 +193,9 @@ export const FAVICON_SVG =
 
 export const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}`;
 
+/** Header logo. Stand-in: the favicon pennant, until there's a real mark. */
+export const LOGO_SVG = FAVICON_SVG.replace("<svg ", '<svg aria-hidden="true" ');
+
 /** Runs in <head> before first paint so a saved theme never flashes the wrong colors. */
 export const THEME_HEAD_JS =
   'try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}' +
@@ -205,7 +213,7 @@ try{n==="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",n)}
   `(function(){var a=document.getElementById("os");if(!a)return;var on=function(){return document.documentElement.dataset.stats==="all"};
 var show=function(){var v=on();a.setAttribute("aria-checked",v?"true":"false");a.title=v?"Including off-season events in records and leaderboards":"Off-season events are left out of records and leaderboards"};
 show();a.addEventListener("click",function(e){e.preventDefault();var u=new URL(location.href);u.searchParams.set("stats",on()?"official":"all");location.href=u.pathname+u.search})})();` +
-  `document.addEventListener("keydown",function(e){var a=document.activeElement;if(e.key==="/"&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){var i=document.querySelector(".top input");if(i){e.preventDefault();i.focus()}}});`.replace(
+  `document.addEventListener("keydown",function(e){var a=document.activeElement;if(e.key==="/"&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){var i=document.querySelector(".hd input");if(i){e.preventDefault();i.focus()}}});`.replace(
     /\n/g,
     "",
   );
@@ -238,7 +246,7 @@ return{t:T.slice(0,nt).map(function(x){return x[1]}),e:E.slice(0,ne).map(functio
  * every keystroke is matched locally: no request, no D1 read. Without JS the form still posts to /search.
  */
 export const SEARCH_JS =
-  `${SUGGEST_RANK_JS}(function(){var f=document.querySelector(".top form"),i=f&&f.querySelector("input");if(!i)return;
+  `${SUGGEST_RANK_JS}(function(){var f=document.querySelector(".hd form"),i=f&&f.querySelector("input");if(!i)return;
 var ix=null,p=null,act=-1,go=[],b=document.createElement("div");b.className="sug";b.id="sug";b.setAttribute("role","listbox");b.hidden=true;f.appendChild(b);
 i.setAttribute("role","combobox");i.setAttribute("aria-autocomplete","list");i.setAttribute("aria-controls","sug");i.setAttribute("aria-expanded","false");i.autocomplete="off";
 var load=function(){return p||(p=fetch("/search-index.json").then(function(r){if(!r.ok)throw r.status;return r.json()}).then(function(j){ix=j}).catch(function(){p=null}))};
