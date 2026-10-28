@@ -149,8 +149,13 @@ footer .fl-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-si
 .ok{color:var(--win);font-weight:bold}.err{color:var(--red);font-weight:bold}
 .newkey{border:1px solid var(--win);background:var(--win-bg);padding:4px 12px;margin:8px 0 12px}.newkey>code{display:block;font-size:14px;padding:6px 8px;background:var(--bg);word-break:break-all;user-select:all}.newkey .note code{word-break:break-all}
 .st.keys{width:auto;margin:6px 0 10px}.st.keys td{padding:3px 8px}.st.keys form{margin:0}.st.keys .go{font-size:12px;padding:1px 6px}
+.top form{position:relative}.sug{position:absolute;right:0;top:calc(100% + 3px);z-index:20;width:380px;max-width:calc(100vw - 32px);background:var(--bg);color:var(--fg);border:1px solid var(--frame);box-shadow:0 6px 18px rgba(0,0,0,.22);font-weight:normal;text-align:left}
+.sug[hidden]{display:none}.top .sug a{display:block;color:var(--fg);padding:4px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
+.sug a span{display:block;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}.sug a i{font-style:normal;color:var(--link);font-variant-numeric:tabular-nums}
+.top .sug a[aria-selected=true],.top .sug a:hover{background:var(--hi)}.sug b{font-weight:bold}
+.sgh{padding:5px 10px 2px;font-size:11px;font-weight:bold;letter-spacing:.5px;text-transform:uppercase;color:var(--sect);border-top:1px solid var(--line)}.sgh:first-child{border-top:0}
 .prose{max-width:720px;line-height:1.55}.prose li{margin:3px 0}.prose code{font-size:13px;background:var(--head);padding:0 3px}
-@media (max-width:640px){.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:23px}tr.mhide{display:none}.st th,.st td{padding:3px 5px}}
+@media (max-width:640px){.sug{left:0;width:auto;max-width:none}.top form{margin-left:0;width:100%;order:9}.score .pts{font-size:26px}.sb{min-width:80px;padding:4px 8px}.sbv{font-size:18px}.tt{margin-left:auto}.top input{width:100%;max-width:none}h1{font-size:23px}tr.mhide{display:none}.st th,.st td{padding:3px 5px}}
 `.replace(/\n/g, "");
 
 /**
@@ -204,3 +209,54 @@ show();a.addEventListener("click",function(e){e.preventDefault();var u=new URL(l
     /\n/g,
     "",
   );
+
+/**
+ * Autosuggest ranking over /search-index.json ({t: [number, name, place, lastSeason][], e: [season,
+ * code, name, sub][]}). Pure, so it is unit-tested by evaluating this string. Every word must appear
+ * somewhere; whole-name, name-prefix and word-prefix matches rank above substrings. Team numbers match
+ * by prefix, shortest first. Ties go to recently active teams and newer events.
+ */
+export const SUGGEST_RANK_JS = `function sgRank(ix,q,nt,ne){
+q=q.toLowerCase().trim().replace(/\\s+/g," ");if(!q)return{t:[],e:[]};var w=q.split(" ");
+var sc=function(name,rest){var all=name+" "+rest;for(var i=0;i<w.length;i++)if(all.indexOf(w[i])<0)return -1;
+if(name===q)return 0;if(name.indexOf(q)===0)return 1;if((" "+name).indexOf(" "+q)>=0)return 2;if(name.indexOf(q)>=0)return 3;
+for(var j=0;j<w.length;j++)if((" "+name).indexOf(" "+w[j])<0)return 5;return 4};
+var T=[],E=[],num=/^\\d+$/.test(q);
+ix.t.forEach(function(r){var s;if(num){var n=String(r[0]);s=n.indexOf(q)===0?n.length-q.length:-1}
+else s=sc(r.n||(r.n=r[1].toLowerCase()),r.l||(r.l=r[2].toLowerCase()));if(s>=0)T.push([s,r])});
+ix.e.forEach(function(r,k){var c=r[1].toLowerCase(),s=c===q?0:w.length===1&&c.indexOf(q)===0?1:-1;
+if(s<0){s=sc(r.n||(r.n=r[2].toLowerCase()),c+" "+(r.l||(r.l=r[3].toLowerCase())));if(s>=0)s+=2}if(s>=0)E.push([s,r,k])});
+T.sort(function(a,b){return a[0]-b[0]||b[1][3]-a[1][3]||a[1][0]-b[1][0]});
+E.sort(function(a,b){return a[0]-b[0]||b[1][0]-a[1][0]||a[2]-b[2]});
+return{t:T.slice(0,nt).map(function(x){return x[1]}),e:E.slice(0,ne).map(function(x){return x[1]})}}`.replace(
+  /\n/g,
+  "",
+);
+
+/**
+ * Header search box autosuggest. The index loads once, on first focus (browser-cached for hours), and
+ * every keystroke is matched locally: no request, no D1 read. Without JS the form still posts to /search.
+ */
+export const SEARCH_JS =
+  `${SUGGEST_RANK_JS}(function(){var f=document.querySelector(".top form"),i=f&&f.querySelector("input");if(!i)return;
+var ix=null,p=null,act=-1,go=[],b=document.createElement("div");b.className="sug";b.id="sug";b.setAttribute("role","listbox");b.hidden=true;f.appendChild(b);
+i.setAttribute("role","combobox");i.setAttribute("aria-autocomplete","list");i.setAttribute("aria-controls","sug");i.setAttribute("aria-expanded","false");i.autocomplete="off";
+var load=function(){return p||(p=fetch("/search-index.json").then(function(r){if(!r.ok)throw r.status;return r.json()}).then(function(j){ix=j}).catch(function(){p=null}))};
+var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return"&#"+c.charCodeAt(0)+";"})};
+var hl=function(s,q){s=String(s);var k=s.toLowerCase().indexOf(q);return k<0?esc(s):esc(s.slice(0,k))+"<b>"+esc(s.slice(k,k+q.length))+"</b>"+esc(s.slice(k+q.length))};
+var close=function(){b.hidden=true;act=-1;i.setAttribute("aria-expanded","false");i.removeAttribute("aria-activedescendant")};
+var mark=function(){[].forEach.call(b.querySelectorAll("[role=option]"),function(a,k){a.setAttribute("aria-selected",k===act?"true":"false")});
+if(act>=0)i.setAttribute("aria-activedescendant","sg"+act);else i.removeAttribute("aria-activedescendant")};
+var show=function(){var q=i.value.trim();if(!q||!ix){close();return}var r=sgRank(ix,q,6,5),lq=q.toLowerCase(),h="";go=[];
+var opt=function(href,main,sub){h+='<a role="option" id="sg'+go.length+'" href="'+href+'">'+main+(sub?"<span>"+sub+"</span>":"")+"</a>";go.push(href)};
+if(r.t.length){h+='<div class="sgh">Teams</div>';r.t.forEach(function(t){opt("/teams/"+t[0],"<i>"+hl(t[0],lq)+"</i> "+hl(t[1],lq),esc(t[2]))})}
+if(r.e.length){h+='<div class="sgh">Events</div>';r.e.forEach(function(e){opt("/events/"+e[0]+"/"+encodeURIComponent(e[1]),hl(e[2],lq),esc(e[3]))})}
+if(!go.length)h+='<div class="sgh">No quick matches</div>';opt("/search?q="+encodeURIComponent(q),"All results for “"+esc(q)+"” →","");
+b.innerHTML=h;b.hidden=false;i.setAttribute("aria-expanded","true");act=-1;mark()};
+i.addEventListener("focus",load);i.addEventListener("input",function(){if(ix)show();else{var x=load();x&&x.then(show)}});
+i.addEventListener("keydown",function(e){if(e.key==="Escape"){if(!b.hidden){e.preventDefault();close()}return}if(b.hidden&&e.key!=="ArrowDown")return;
+if(e.key==="ArrowDown"){e.preventDefault();if(b.hidden){show();return}act=Math.min(act+1,go.length-1);mark()}
+else if(e.key==="ArrowUp"){e.preventDefault();act=Math.max(act-1,-1);mark()}
+else if(e.key==="Enter"&&act>=0){e.preventDefault();location.href=go[act]}});
+b.addEventListener("mousemove",function(e){var a=e.target.closest("[role=option]");if(a){act=+a.id.slice(2);mark()}});
+document.addEventListener("click",function(e){if(!f.contains(e.target))close()})})();`.replace(/\n/g, "");

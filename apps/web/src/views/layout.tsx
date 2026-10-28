@@ -1,6 +1,6 @@
 import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
-import { CSS, FAVICON_DATA_URI, SORT_JS, THEME_HEAD_JS, THEME_TOGGLE_JS } from "../assets";
+import { CSS, FAVICON_DATA_URI, SEARCH_JS, SORT_JS, THEME_HEAD_JS, THEME_TOGGLE_JS } from "../assets";
 import { ldScript } from "../jsonld";
 
 export function Layout(props: {
@@ -83,7 +83,7 @@ export function Layout(props: {
               <a href="https://github.com/ColinSherman/ftc-reference">GitHub</a>
             </nav>
           </footer>
-          <script>{raw(SORT_JS + THEME_TOGGLE_JS)}</script>
+          <script>{raw(SORT_JS + THEME_TOGGLE_JS + SEARCH_JS)}</script>
         </body>
       </html>
     </>
