@@ -79,6 +79,20 @@ export const markRemoved = (db: D1Database, season: number, code: string) =>
     .bind(nowIso(), season, code)
     .run();
 
+/**
+ * Store one event's team and played-match counts (list pages show them), writing only when they moved.
+ * Run after anything that changes the event's roster or results.
+ */
+export const eventCountsStatement = (db: D1Database, season: number, code: string) =>
+  db
+    .prepare(
+      `UPDATE events SET team_count = c.t, played_count = c.p
+       FROM (SELECT (SELECT COUNT(*) FROM event_teams WHERE season = ?1 AND event_code = ?2) AS t,
+                    (SELECT COUNT(*) FROM matches WHERE season = ?1 AND event_code = ?2 AND played = 1) AS p) AS c
+       WHERE season = ?1 AND code = ?2 AND (team_count IS NOT c.t OR played_count IS NOT c.p)`,
+    )
+    .bind(season, code);
+
 /** FTCScout-style normalised type: "League Meet" → "LeagueMeet", "Non-Advancement" → "NonAdvancement". */
 export const eventKind = (typeName: string | null | undefined) =>
   (typeName ?? "").replace(/[\s\-/]/g, "") || null;

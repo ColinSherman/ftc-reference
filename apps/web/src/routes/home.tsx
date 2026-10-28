@@ -42,17 +42,16 @@ homeRoutes.get("/", (c) =>
     const [countsR, evR, topR, autoR, highR, inspireR] = await d.batch([
       d
         .prepare(
-          `SELECT (SELECT COUNT(*) FROM events WHERE season = ?1) AS events,
-                  (SELECT COUNT(*) FROM team_seasons WHERE season = ?1) AS teams,
-                  (SELECT COUNT(*) FROM matches WHERE season = ?1 AND played = 1) AS matches`,
+          // Stored by the sync Worker (hourly for the current season), not counted per view.
+          `SELECT COALESCE(event_count, 0) AS events, COALESCE(team_count, 0) AS teams,
+                  COALESCE(played_count, 0) AS matches FROM seasons WHERE year = ?`,
         )
         .bind(SEASON),
       d
         .prepare(
           `SELECT e.code, e.name, e.city, e.state_prov, e.country, e.date_start, e.date_end, e.live_stream_url,
-                  (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played,
-                  (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams,
-                  (SELECT COUNT(DISTINCT v.match_id) FROM videos v JOIN matches mv ON mv.id = v.match_id
+                  COALESCE(e.played_count, 0) AS played, COALESCE(e.team_count, 0) AS teams,
+                  (SELECT COUNT(DISTINCT v.match_id) FROM matches mv CROSS JOIN videos v ON v.match_id = mv.id
                     WHERE mv.season = e.season AND mv.event_code = e.code AND v.status = 'approved') AS videos,
                   (SELECT COUNT(*) FROM event_streams es WHERE es.season = e.season AND es.event_code = e.code) AS streams,
                   CASE WHEN e.webcasts_json IS NOT NULL AND e.webcasts_json NOT IN ('', '[]') THEN 1 ELSE 0 END AS webcast
@@ -336,22 +335,24 @@ homeRoutes.get("/seasons", (c) =>
   cached(c, { ttl: 600 }, async () => {
     const mode = statsMode(c);
     const table = seasonStatsTable(mode);
+    // Counts are stored by the sync Worker; the rest walk an index from the top and stop at one row.
+    // (Counting every season's matches here read ~3M rows per uncached view.)
     const highNp =
       mode === "official"
-        ? `(SELECT MAX(sc.np) FROM match_scores sc
-            JOIN matches hm ON hm.id = sc.match_id AND hm.season = y.year
-            JOIN events he ON he.season = hm.season AND he.code = hm.event_code
-            WHERE ${seasonKindIn("he")})`
-        : `(SELECT MAX(np) FROM match_scores s WHERE s.season = y.year)`;
+        ? `(SELECT sc.np FROM match_scores sc
+            CROSS JOIN matches hm ON hm.id = sc.match_id
+            CROSS JOIN events he ON he.season = hm.season AND he.code = hm.event_code
+            WHERE sc.season = y.year AND ${seasonKindIn("he")} ORDER BY sc.np DESC LIMIT 1)`
+        : `(SELECT np FROM match_scores s WHERE s.season = y.year ORDER BY np DESC LIMIT 1)`;
+    const ranked = mode === "official" ? "ranked_official" : "ranked_all";
     const { results } = await db(c)
       .prepare(
         `SELECT y.year, y.backfilled_at, y.backfill_stage,
-                (SELECT COUNT(*) FROM events e WHERE e.season = y.year) AS events,
-                (SELECT COUNT(*) FROM matches m WHERE m.season = y.year AND m.played = 1) AS matches,
-                (SELECT COUNT(*) FROM ${table} s WHERE s.season = y.year) AS teams,
+                COALESCE(y.event_count, 0) AS events, COALESCE(y.played_count, 0) AS matches,
+                COALESCE(y.${ranked}, 0) AS teams,
                 ${highNp} AS high_np,
                 (SELECT team FROM ${table} s WHERE s.season = y.year ORDER BY best_opr_np DESC LIMIT 1) AS top_team,
-                (SELECT MAX(best_opr_np) FROM ${table} s WHERE s.season = y.year) AS top_opr
+                (SELECT best_opr_np FROM ${table} s WHERE s.season = y.year ORDER BY best_opr_np DESC LIMIT 1) AS top_opr
          FROM seasons y ORDER BY y.year DESC`,
       )
       .all<{
@@ -632,8 +633,12 @@ homeRoutes.get("/search", async (c) => {
   if (/^\d{1,6}$/.test(q)) return c.redirect(`/teams/${q}`, 302);
   if (/^[A-Za-z0-9]{3,12}$/.test(q)) {
     const ev = await db(c)
-      .prepare("SELECT season, code FROM events WHERE code = ? ORDER BY season DESC LIMIT 1")
-      .bind(q.toUpperCase())
+      // Listing the seasons lets the (season, code) primary key find it instead of scanning every event.
+      .prepare(
+        `SELECT season, code FROM events WHERE season IN (${ALL_SEASONS.map(() => "?").join(",")}) AND code = ?
+         ORDER BY season DESC LIMIT 1`,
+      )
+      .bind(...ALL_SEASONS, q.toUpperCase())
       .first<{ season: number; code: string }>();
     if (ev) return c.redirect(`/events/${ev.season}/${ev.code}`, 302);
   }

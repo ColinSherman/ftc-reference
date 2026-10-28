@@ -1,5 +1,6 @@
 import { nowIso } from "@ftcref/db";
 import type { Env, SyncMessage } from "./env";
+import { refreshSeasonRanks } from "./jobs/eventStats";
 
 /** Event kinds that never have matches; skipping them saves ~30% of backfill requests. */
 const NON_COMPETITION = [
@@ -70,11 +71,16 @@ export async function advanceBackfill(env: Env, enqueueBulk: (m: SyncMessage[]) 
 
   if (s.backfill_stage === "matches") {
     // Backfill jobs log target "~{season}/…"; quiet for 5 minutes ⇒ the backlog drained.
-    const last = await env.DB.prepare("SELECT MAX(started_at) AS t FROM sync_runs WHERE target LIKE ?")
-      .bind(`~${season}/%`)
+    // A range (not LIKE) so the target index is used: '0' sorts right after '/'.
+    const last = await env.DB.prepare(
+      "SELECT MAX(started_at) AS t FROM sync_runs WHERE target >= ? AND target < ?",
+    )
+      .bind(`~${season}/`, `~${season}0`)
       .first<{ t: string | null }>();
     const quiet = !last?.t || Date.now() - Date.parse(last.t) > 5 * MIN;
     if (since > 10 * MIN && quiet) {
+      // World ranks and season counts are otherwise refreshed for the current season only.
+      await refreshSeasonRanks(env.DB, season);
       await setStage("done", true);
       return `${season}: done`;
     }
@@ -97,9 +103,12 @@ async function repairFailedEvents(env: Env, enqueueBulk: (m: SyncMessage[]) => P
     .first<{ last_checked_at: string | null }>();
   if (last?.last_checked_at && Date.now() - Date.parse(last.last_checked_at) < 60 * MIN) return null;
 
+  // Backfill targets start with "~", the last printable character, so the target index finds them
+  // without scanning the whole table (hundreds of thousands of live-polling runs).
   const { results } = await env.DB.prepare(
     `SELECT r.target FROM sync_runs r
-     WHERE r.job = 'eventMatches' AND r.target LIKE '~%/%' AND r.error IS NOT NULL
+     WHERE r.target >= '~' AND r.target < '~~' AND r.target LIKE '~%/%'
+       AND r.job = 'eventMatches' AND r.error IS NOT NULL
        AND r.id = (SELECT MAX(x.id) FROM sync_runs x WHERE x.job = 'eventMatches' AND x.target = r.target)
        AND (SELECT COUNT(*) FROM sync_runs y WHERE y.job = 'eventMatches' AND y.target = r.target) < ?
      GROUP BY r.target LIMIT 300`,

@@ -144,8 +144,9 @@ export async function recomputeEventStats(db: D1Database, season: number, code: 
 type SeasonStatsTable = "team_season_stats" | "team_official_stats";
 
 /**
- * Store each team's world rank (by best NP OPR) and the season's ranked-team counts, so team pages
- * don't count them per view. Only rows whose rank moved are written.
+ * Store each team's world rank (by best NP OPR), the season's ranked-team counts, and its event,
+ * team and played-match counts, so team pages and season lists don't count them per view. Only
+ * values that moved are written.
  */
 export async function refreshSeasonRanks(db: D1Database, season: number) {
   const rank = (table: SeasonStatsTable) =>
@@ -163,10 +164,15 @@ export async function refreshSeasonRanks(db: D1Database, season: number) {
     rank("team_official_stats"),
     db
       .prepare(
-        `UPDATE seasons SET ranked_all = c.a, ranked_official = c.o
+        `UPDATE seasons SET ranked_all = c.a, ranked_official = c.o,
+                            event_count = c.e, team_count = c.t, played_count = c.p
          FROM (SELECT (SELECT COUNT(*) FROM team_season_stats WHERE season = ?1) AS a,
-                      (SELECT COUNT(*) FROM team_official_stats WHERE season = ?1) AS o) AS c
-         WHERE year = ?1 AND (ranked_all IS NOT c.a OR ranked_official IS NOT c.o)`,
+                      (SELECT COUNT(*) FROM team_official_stats WHERE season = ?1) AS o,
+                      (SELECT COUNT(*) FROM events WHERE season = ?1) AS e,
+                      (SELECT COUNT(*) FROM team_seasons WHERE season = ?1) AS t,
+                      (SELECT COALESCE(SUM(played_count), 0) FROM events WHERE season = ?1) AS p) AS c
+         WHERE year = ?1 AND (ranked_all IS NOT c.a OR ranked_official IS NOT c.o OR event_count IS NOT c.e
+                              OR team_count IS NOT c.t OR played_count IS NOT c.p)`,
       )
       .bind(season),
   ]);
@@ -176,99 +182,114 @@ export async function refreshSeasonRanks(db: D1Database, season: number) {
  * Season rollup per team: best / latest event OPRs and best single-match NP.
  * Writes every event into team_season_stats, and season events (official plus non-advancement)
  * into team_official_stats. Off-season stays in the all-events table only.
+ * Both tables come from one read per chunk: this runs after every change at a live event.
  */
 export async function recomputeSeasonStats(db: D1Database, season: number, teams: number[]) {
   const now = nowIso();
-  await rollupSeasonStats(db, season, teams, "team_season_stats", false, now);
-  await rollupSeasonStats(db, season, teams, "team_official_stats", true, now);
-}
-
-async function rollupSeasonStats(
-  db: D1Database,
-  season: number,
-  teams: number[],
-  table: SeasonStatsTable,
-  official: boolean,
-  now: string,
-) {
-  const kind = official ? `AND ${seasonKindIn("e")}` : "";
   for (let i = 0; i < teams.length; i += 90) {
     const chunk = teams.slice(i, i + 90);
     const ph = chunk.map(() => "?").join(",");
+    // INDEXED BY / CROSS JOIN: without them SQLite walks the whole season (the primary key's
+    // first column) instead of these teams' rows.
     const [evRes, bestRes] = await db.batch([
       db
         .prepare(
-          `SELECT t.*, e.date_end FROM team_event_stats t
-           JOIN events e ON e.season = t.season AND e.code = t.event_code
-           WHERE t.season = ? AND t.team IN (${ph}) ${kind}`,
+          `SELECT t.*, e.date_end, ${seasonKindIn("e")} AS official
+           FROM team_event_stats t INDEXED BY tes_by_team
+           CROSS JOIN events e ON e.season = t.season AND e.code = t.event_code
+           WHERE t.season = ? AND t.team IN (${ph})`,
         )
         .bind(season, ...chunk),
+      // Best match per team, separately for season events and the rest (bare match_id follows MAX).
       db
         .prepare(
-          `SELECT mt.team, s.match_id, MAX(s.np) AS best_np
-           FROM match_teams mt
-           JOIN matches m ON m.id = mt.match_id AND m.season = ?
-           JOIN events e ON e.season = m.season AND e.code = m.event_code
-           JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
-           WHERE mt.team IN (${ph}) AND mt.surrogate = 0 ${kind}
-           GROUP BY mt.team`,
+          `SELECT mt.team, ${seasonKindIn("e")} AS official, s.match_id, MAX(s.np) AS best_np
+           FROM match_teams mt INDEXED BY match_teams_by_team
+           CROSS JOIN matches m ON m.id = mt.match_id AND m.season = ?
+           CROSS JOIN events e ON e.season = m.season AND e.code = m.event_code
+           CROSS JOIN match_scores s ON s.match_id = mt.match_id AND s.alliance = mt.alliance
+           WHERE mt.team IN (${ph}) AND mt.surrogate = 0
+           GROUP BY mt.team, official`,
         )
         .bind(season, ...chunk),
     ]);
-    type Ev = Record<string, number | string | null> & { team: number; event_code: string; date_end: string };
     const evs = (evRes?.results ?? []) as Ev[];
-    const best = new Map(
-      ((bestRes?.results ?? []) as { team: number; match_id: number; best_np: number }[]).map((b) => [
-        b.team,
-        b,
-      ]),
+    const best = (bestRes?.results ?? []) as Best[];
+    const all = rollupRows(season, chunk, evs, best, now);
+    const official = rollupRows(
+      season,
+      chunk,
+      evs.filter((e) => e.official),
+      best.filter((b) => b.official),
+      now,
     );
-    const rows = chunk.flatMap((team) => {
-      const mine = evs.filter((e) => e.team === team);
-      if (mine.length === 0) return [];
-      const num = (e: Ev, k: string) => (e[k] as number | null) ?? Number.NEGATIVE_INFINITY;
-      const top = (k: string) => {
-        const v = Math.max(...mine.map((e) => num(e, k)));
-        return Number.isFinite(v) ? v : null;
-      };
-      const bestEv = mine.reduce((a, b) => (num(b, "opr_np") > num(a, "opr_np") ? b : a));
-      const latest = mine.reduce((a, b) => (b.date_end > a.date_end ? b : a));
-      const sum = (k: string) => mine.reduce((n, e) => n + ((e[k] as number) ?? 0), 0);
-      return [
-        {
-          season,
-          team,
-          events_played: mine.length,
-          played: sum("played"),
-          wins: sum("wins"),
-          losses: sum("losses"),
-          ties: sum("ties"),
-          best_event: bestEv.event_code,
-          best_opr_np: top("opr_np"),
-          best_opr_auto: top("opr_auto"),
-          best_opr_teleop: top("opr_teleop"),
-          best_opr_endgame: top("opr_endgame"),
-          best_opr_c1: top("opr_c1"),
-          best_opr_c2: top("opr_c2"),
-          best_opr_c3: top("opr_c3"),
-          best_opr_c4: top("opr_c4"),
-          latest_event: latest.event_code,
-          latest_opr_np: (latest.opr_np as number | null) ?? null,
-          best_np_match_id: best.get(team)?.match_id ?? null,
-          best_np: best.get(team)?.best_np ?? null,
-          updated_at: now,
-        },
-      ];
-    });
-    const drop = official ? chunk.filter((team) => !rows.some((r) => r.team === team)) : [];
-    const clear =
-      drop.length > 0
+    // A team with no season events left (say, an event reclassified as off-season) drops out.
+    const drop = chunk.filter((team) => !official.some((r) => r.team === team));
+    await runBatched(db, [
+      ...upsertStatements(db, "team_season_stats", all, ["season", "team"]),
+      ...(drop.length > 0
         ? [
             db
-              .prepare(`DELETE FROM ${table} WHERE season = ? AND team IN (${drop.map(() => "?").join(",")})`)
+              .prepare(
+                `DELETE FROM team_official_stats WHERE season = ? AND team IN (${drop.map(() => "?").join(",")})`,
+              )
               .bind(season, ...drop),
           ]
-        : [];
-    await runBatched(db, [...clear, ...upsertStatements(db, table, rows, ["season", "team"])]);
+        : []),
+      ...upsertStatements(db, "team_official_stats", official, ["season", "team"]),
+    ]);
   }
+}
+
+type Ev = Record<string, number | string | null> & {
+  team: number;
+  event_code: string;
+  date_end: string;
+  official: number | null;
+};
+type Best = { team: number; official: number | null; match_id: number; best_np: number };
+
+function rollupRows(season: number, chunk: number[], evs: Ev[], bests: Best[], now: string) {
+  const best = new Map<number, Best>();
+  for (const b of bests) {
+    const cur = best.get(b.team);
+    if (!cur || b.best_np > cur.best_np) best.set(b.team, b);
+  }
+  return chunk.flatMap((team) => {
+    const mine = evs.filter((e) => e.team === team);
+    if (mine.length === 0) return [];
+    const num = (e: Ev, k: string) => (e[k] as number | null) ?? Number.NEGATIVE_INFINITY;
+    const top = (k: string) => {
+      const v = Math.max(...mine.map((e) => num(e, k)));
+      return Number.isFinite(v) ? v : null;
+    };
+    const bestEv = mine.reduce((a, b) => (num(b, "opr_np") > num(a, "opr_np") ? b : a));
+    const latest = mine.reduce((a, b) => (b.date_end > a.date_end ? b : a));
+    const sum = (k: string) => mine.reduce((n, e) => n + ((e[k] as number) ?? 0), 0);
+    return [
+      {
+        season,
+        team,
+        events_played: mine.length,
+        played: sum("played"),
+        wins: sum("wins"),
+        losses: sum("losses"),
+        ties: sum("ties"),
+        best_event: bestEv.event_code,
+        best_opr_np: top("opr_np"),
+        best_opr_auto: top("opr_auto"),
+        best_opr_teleop: top("opr_teleop"),
+        best_opr_endgame: top("opr_endgame"),
+        best_opr_c1: top("opr_c1"),
+        best_opr_c2: top("opr_c2"),
+        best_opr_c3: top("opr_c3"),
+        best_opr_c4: top("opr_c4"),
+        latest_event: latest.event_code,
+        latest_opr_np: (latest.opr_np as number | null) ?? null,
+        best_np_match_id: best.get(team)?.match_id ?? null,
+        best_np: best.get(team)?.best_np ?? null,
+        updated_at: now,
+      },
+    ];
+  });
 }

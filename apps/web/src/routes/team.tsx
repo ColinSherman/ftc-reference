@@ -67,6 +67,8 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
     const awardKind = mode === "official" ? `AND ${seasonKindIn("ae")}` : "";
     const rankedCol = mode === "official" ? "ranked_official" : "ranked_all";
     const d = db(c);
+    // INDEXED BY / CROSS JOIN below start from this team's rows. Left to itself, SQLite walks the
+    // whole season's events to skip a sort (thousands of rows read per view instead of dozens).
     const [teamR, careerR, mediaR] = await d.batch([
       d
         .prepare(
@@ -79,8 +81,8 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
           `SELECT y.year AS season, y.game_name, ts.name_short AS team_name,
                   s.events_played, s.wins, s.losses, s.ties, s.best_opr_np, s.best_opr_auto, s.best_event, s.best_np,
                   s.world_rank, y.${rankedCol} AS ranked,
-                  (SELECT COUNT(*) FROM awards a
-                    JOIN events ae ON ae.season = a.season AND ae.code = a.event_code
+                  (SELECT COUNT(*) FROM awards a INDEXED BY awards_by_team
+                    CROSS JOIN events ae ON ae.season = a.season AND ae.code = a.event_code
                     WHERE a.season = y.year AND a.team = ?1 ${awardKind}) AS awards
            FROM seasons y
            LEFT JOIN team_seasons ts ON ts.season = y.year AND ts.number = ?1
@@ -125,7 +127,7 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         .prepare(
           `SELECT e.code, e.name, e.date_start, e.date_end, e.type_name, e.kind, s.*, r.rank AS official_rank
            FROM event_teams et
-           JOIN events e ON e.season = et.season AND e.code = et.event_code
+           CROSS JOIN events e ON e.season = et.season AND e.code = et.event_code
            LEFT JOIN team_event_stats s ON s.season = et.season AND s.event_code = et.event_code AND s.team = et.team
            LEFT JOIN rankings r ON r.season = et.season AND r.event_code = et.event_code AND r.team = et.team
            WHERE et.season = ? AND et.team = ? ORDER BY e.date_start`,
@@ -147,8 +149,8 @@ teamRoutes.get("/:n{[0-9]+}", (c) =>
         .bind(n, season),
       d
         .prepare(
-          `SELECT a.name, a.event_code, e.name AS event_name, e.kind FROM awards a
-           JOIN events e ON e.season = a.season AND e.code = a.event_code
+          `SELECT a.name, a.event_code, e.name AS event_name, e.kind FROM awards a INDEXED BY awards_by_team
+           CROSS JOIN events e ON e.season = a.season AND e.code = a.event_code
            WHERE a.team = ? AND a.season = ? ORDER BY e.date_start`,
         )
         .bind(n, season),
