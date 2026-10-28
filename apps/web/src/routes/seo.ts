@@ -10,7 +10,8 @@ export const seoRoutes = new Hono<{ Bindings: Env }>();
 const SITEMAP_SEASONS = 3;
 /** Protocol limit per sitemap file; the index below keeps events and teams in separate files. */
 const MAX_URLS = 50_000;
-const TTL = 3600;
+/** Sitemaps change slowly (new events and teams), and each build reads every row it lists. */
+const TTL = 86_400;
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 

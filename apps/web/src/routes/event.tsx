@@ -131,9 +131,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
       args.push(region);
     }
     if (withResults) {
-      where.push(
-        "EXISTS (SELECT 1 FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1)",
-      );
+      where.push("e.played_count > 0");
     }
     if (format === "trad") where.push("e.remote = 0");
     else if (format === "remote") where.push("e.remote = 1");
@@ -149,8 +147,7 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
         .prepare(
           `SELECT e.code, e.name, e.kind, e.type_name, e.city, e.state_prov, e.country, e.region_code, e.remote,
                   e.date_start, e.date_end,
-                  (SELECT COUNT(*) FROM event_teams t WHERE t.season = e.season AND t.event_code = e.code) AS teams,
-                  (SELECT COUNT(*) FROM matches m WHERE m.season = e.season AND m.event_code = e.code AND m.played = 1) AS played
+                  COALESCE(e.team_count, 0) AS teams, COALESCE(e.played_count, 0) AS played
            FROM events e WHERE ${where.join(" AND ")} ORDER BY e.date_start, e.name`,
         )
         .bind(...args),
@@ -159,7 +156,8 @@ eventRoutes.get("/:season{[0-9]{4}}", (c) => {
         .bind(season),
       d
         .prepare(
-          `SELECT m.event_code, COUNT(*) AS n FROM videos v JOIN matches m ON m.id = v.match_id
+          // CROSS JOIN starts from the (few) approved videos rather than every match in the season.
+          `SELECT m.event_code, COUNT(*) AS n FROM videos v CROSS JOIN matches m ON m.id = v.match_id
            WHERE m.season = ? AND v.status = 'approved' GROUP BY m.event_code`,
         )
         .bind(season),
@@ -507,11 +505,12 @@ eventRoutes.get("/:season{[0-9]{4}}/:code", (c) => {
         )
         .bind(season, code),
       d
+        // `+s.opr_np`: sort these few rows, rather than walk the season-wide OPR index to skip the sort.
         .prepare(
           `SELECT s.*, t.name_short, t.city, t.state_prov, t.country, t.home_region, av.key AS av FROM team_event_stats s
            LEFT JOIN teams t ON t.number = s.team
            LEFT JOIN team_avatars av ON av.team = s.team
-           WHERE s.season = ? AND s.event_code = ? ORDER BY s.opr_np DESC`,
+           WHERE s.season = ? AND s.event_code = ? ORDER BY +s.opr_np DESC`,
         )
         .bind(season, code),
       d

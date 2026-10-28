@@ -2,7 +2,7 @@ import { runBatched, upsertStatements } from "@ftcref/db";
 import type { ApiTeamsPage, FtcApi } from "@ftcref/ftc-api";
 import type { Env } from "../env";
 import { changed, dataOf, trackedGet } from "../tracked";
-import { isInvalidEvent, markRemoved } from "./events";
+import { eventCountsStatement, isInvalidEvent, markRemoved } from "./events";
 import { teamStatements } from "./teams";
 
 /**
@@ -38,6 +38,7 @@ export async function syncEventTeams(env: Env, api: FtcApi, season: number, code
       `DELETE FROM event_teams WHERE season = ? AND event_code = ?
          AND team NOT IN (SELECT value FROM json_each(?))`,
     ).bind(season, code, JSON.stringify(nums)),
+    eventCountsStatement(env.DB, season, code),
     t.commit(),
   ]);
   // Event pages are cached by version key; bump it so the new roster shows without waiting for the TTL.

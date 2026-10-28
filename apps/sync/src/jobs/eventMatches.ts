@@ -11,6 +11,7 @@ import { type ApiScore, correctionFor, getSeason, scoreColumns } from "@ftcref/s
 import type { Env } from "../env";
 import { changed, dataOf, type Tracked, trackedGet } from "../tracked";
 import { recomputeEventStats } from "./eventStats";
+import { eventCountsStatement } from "./events";
 import { teamStatements } from "./teams";
 
 const LEVEL: Record<TournamentLevel, string> = {
@@ -220,6 +221,7 @@ export async function syncEventMatches(env: Env, api: FtcApi, season: number, co
       eventTeams.map((t) => ({ season, event_code: code, team: t.teamNumber })),
       ["season", "event_code", "team"],
     ),
+    eventCountsStatement(env.DB, season, code),
   ]);
   rows += scoreRows.length + eventTeams.length;
 

@@ -43,6 +43,11 @@ browser pane: `resize_window` + `document.querySelectorAll('.scroll')` comparing
   `season || '/' || code`; avoid per-row correlated subqueries over a whole table. Staging and local
   data are too small to show the problem, so time new queries against production-sized data (e.g. a
   scratch SQLite with ~700k `sync_runs` rows) before merging.
+- **Billed by rows scanned, and the planner guesses.** Without table statistics SQLite often walks a
+  whole season (the primary key's `season` prefix, or an `ORDER BY` index) instead of the selective
+  index. Check `EXPLAIN QUERY PLAN` for public pages and per-change sync queries, and pin the plan
+  with `INDEXED BY`, `CROSS JOIN` (fixes join order) or `ORDER BY +col`. Store counts list pages
+  show (`events.team_count`, `seasons.played_count`…) instead of `COUNT(*)` per view.
 
 ## Environments: local → staging → production
 
