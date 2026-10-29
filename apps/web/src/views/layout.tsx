@@ -1,6 +1,14 @@
 import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
-import { CSS, FAVICON_DATA_URI, SORT_JS, THEME_HEAD_JS, THEME_TOGGLE_JS } from "../assets";
+import {
+  CSS,
+  FAVICON_DATA_URI,
+  LOGO_SVG,
+  SEARCH_JS,
+  SORT_JS,
+  THEME_HEAD_JS,
+  THEME_TOGGLE_JS,
+} from "../assets";
 import { ldScript } from "../jsonld";
 
 export function Layout(props: {
@@ -31,46 +39,57 @@ export function Layout(props: {
           <style>{raw(CSS)}</style>
         </head>
         <body>
-          <div class="top">
+          <header class="hd">
             <div class="in">
-              <a class="logo" href="/">
-                FTC<b>·</b>Reference
+              <a class="logo" href="/" aria-label="FTC-Reference home">
+                {raw(LOGO_SVG)}
+                <span class="wm">
+                  <b>FTC</b>
+                  <span>Reference</span>
+                </span>
               </a>
-              <nav>
-                <a href="/events/2026">Events</a>
-                <a href="/seasons/2026/leaders">Leaders</a>
-                <a href="/seasons">Seasons</a>
-              </nav>
-              <form action="/search">
+              <form class="srch" action="/search">
                 <input
                   name="q"
                   type="search"
-                  placeholder="Search teams, events…  ( / )"
-                  aria-label="Search"
+                  placeholder="Search teams, numbers, events…  ( / )"
+                  aria-label="Search teams and events"
                 />
+                <button type="submit">Search</button>
               </form>
-              <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
-                ◐ Auto
-              </button>
-              <a
-                id="os"
-                class="os"
-                href="?stats=all"
-                // Crawlers have no cookie, so following this only costs a redirect and a second render.
-                rel="nofollow"
-                role="switch"
-                aria-checked="false"
-                title="Off-season events are left out of records and leaderboards"
-              >
-                Off-season
-                <i />
-              </a>
               {/* Same link for everyone, signed in or not, so cached pages stay shared. */}
               <a class="acct" href="/account" rel="nofollow">
                 Account
               </a>
             </div>
-          </div>
+            <div class="bar">
+              <div class="in">
+                <nav>
+                  <a href="/events/2026">Events</a>
+                  <a href="/seasons/2026/leaders">Leaders</a>
+                  <a href="/seasons">Seasons</a>
+                </nav>
+                <div class="tools">
+                  <a
+                    id="os"
+                    class="os"
+                    href="?stats=all"
+                    // Crawlers have no cookie, so following this only costs a redirect and a second render.
+                    rel="nofollow"
+                    role="switch"
+                    aria-checked="false"
+                    title="Off-season events are left out of records and leaderboards"
+                  >
+                    Off-season
+                    <i />
+                  </a>
+                  <button type="button" id="tt" class="tt" aria-label="Toggle color theme">
+                    ◐ Auto
+                  </button>
+                </div>
+              </div>
+            </div>
+          </header>
           <main>{props.children}</main>
           <footer>
             Data from the{" "}
@@ -83,7 +102,7 @@ export function Layout(props: {
               <a href="https://github.com/ColinSherman/ftc-reference">GitHub</a>
             </nav>
           </footer>
-          <script>{raw(SORT_JS + THEME_TOGGLE_JS)}</script>
+          <script>{raw(SORT_JS + THEME_TOGGLE_JS + SEARCH_JS)}</script>
         </body>
       </html>
     </>
