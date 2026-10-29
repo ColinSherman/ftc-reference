@@ -11,7 +11,7 @@ import {
   type YtVideo,
 } from "@ftcref/videos";
 import { Hono } from "hono";
-import { isAdmin } from "../admin";
+import { hasSessionCookie, isAdmin, type SignedInUser, sameSitePost, signedInUser } from "../admin";
 import { type AppContext, type Env, matchLabel, matchSlug, parseMatchSlug } from "../env";
 import { Layout, Table } from "../views/layout";
 import { ytFor } from "../yt";
@@ -25,7 +25,25 @@ const bump = (c: AppContext, season: number | string, code: string) =>
 
 // ----------------------------------------------------------------------------- public submission
 
+/**
+ * Submitting needs a signed-in account. The form page only checks that a session cookie is present
+ * (no subrequest, no D1), so crawlers and signed-out visitors following the match-page link cost
+ * nothing; the post verifies the session for real.
+ */
+const SignIn = () => (
+  <Layout title="Sign in to submit videos">
+    <h1>Submit match videos</h1>
+    <p>
+      <a href="/login">Sign in</a> with Google or GitHub to submit match videos, then come back to this page.
+    </p>
+  </Layout>
+);
+
+/** Channel imports read the uploads feed 50 videos per page; more than this needs an admin. */
+const PUBLIC_MAX_PAGES = 4;
+
 videoRoutes.get("/videos/submit", async (c) => {
+  if (!hasSessionCookie(c)) return c.html(<SignIn />, 200, noStore);
   const match = c.req.query("match"); // "2025/USCALACALAM1/q3"
   let target: { season: number; code: string; label: string; name: string } | null = null;
   if (match) {
@@ -172,11 +190,14 @@ videoRoutes.get("/videos/submit", async (c) => {
 });
 
 videoRoutes.post("/videos/submit", async (c) => {
+  if (!sameSitePost(c.req.raw.headers, new URL(c.req.url).origin)) return c.text("Forbidden", 403);
+  const user = await signedInUser(c);
+  if (!user) return c.html(<SignIn />, 401, noStore);
   const f = await c.req.parseBody();
-  const by = String(f.by ?? "").slice(0, 60) || null;
+  const by = String(f.by ?? "").slice(0, 60) || user.handle;
 
   // Whole-event video timed from one anchor match.
-  if (f.mode === "anchor") return anchorSubmit(c, f, by);
+  if (f.mode === "anchor") return anchorSubmit(c, f, by, user);
 
   // Single video for one match (from the match page).
   if (f.match) {
@@ -218,10 +239,14 @@ videoRoutes.post("/videos/submit", async (c) => {
       const meta = await yt.playlistTitle(src.id);
       playlistTitle = meta?.title;
       channelId = meta?.channelId;
-      videos = await yt.playlistVideos(src.id);
+      videos = await yt.playlistVideos(src.id, user.admin ? undefined : PUBLIC_MAX_PAGES);
     } else if (src?.kind === "channel" || src?.kind === "handle") {
       channelId = src.kind === "channel" ? src.id : (await yt.channelByHandle(src.handle))?.id;
-      if (channelId) videos = await yt.playlistVideos(YouTube.uploadsPlaylist(channelId));
+      if (channelId)
+        videos = await yt.playlistVideos(
+          YouTube.uploadsPlaylist(channelId),
+          user.admin ? undefined : PUBLIC_MAX_PAGES,
+        );
     } else if (single) {
       const v = await yt.video(single.id);
       if (v) {
@@ -698,7 +723,7 @@ function clockToSeconds(s: string): number | null {
   return timeToSeconds(t) ?? null;
 }
 
-async function anchorSubmit(c: AppContext, f: Record<string, unknown>, by: string | null) {
+async function anchorSubmit(c: AppContext, f: Record<string, unknown>, by: string, user: SignedInUser) {
   const yt = parseYoutubeUrl(String(f.url ?? ""));
   const [s, rawCode] = String(f.event ?? "").split("/");
   const code = (rawCode ?? "").toUpperCase();
@@ -740,7 +765,7 @@ async function anchorSubmit(c: AppContext, f: Record<string, unknown>, by: strin
           .first<{ trusted: number }>()
       )?.trusted
     : false;
-  const approved = trusted || (await isAdmin(c));
+  const approved = trusted || user.admin;
   const r = await anchorAlign(c.env.DB, {
     season: Number(s),
     code,
