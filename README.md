@@ -183,6 +183,14 @@ its migrations and re-syncs back.
   `GITHUB_CLIENT_SECRET`. Without `BETTER_AUTH_SECRET` the Worker answers 503 and `/login` says sign-in
   is unavailable; a provider shows up only once both its secrets are set.
 
+### Visit counts (`/admin/traffic`)
+
+The web Worker writes one Workers Analytics Engine data point per human page load (`apps/web/src/visits.ts`;
+datasets `ftcref_pageviews` and `ftcref_stage_pageviews`, created on first write). No cookies, no stored IPs,
+nothing in D1. To read them on `/admin/traffic`, create an API token with only *Account → Account Analytics →
+Read* and, from `apps/web`, `wrangler secret put CF_ANALYTICS_TOKEN` (add `--env staging` for staging). Account
+counts on the same page come from `ftcref-account`'s `/internal/stats` (admins only).
+
 ## Data terms
 
 Data comes from the FIRST Tech Challenge Events API. Use is non-commercial only, every page links back to the API page (in the footer), and the token must never be committed.
