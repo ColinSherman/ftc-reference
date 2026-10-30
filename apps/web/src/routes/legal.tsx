@@ -78,8 +78,9 @@ legalRoutes.get("/privacy", (c) =>
             </li>
             <li>
               <b>Submissions.</b> If you submit a video or photo link, we store the link, any caption, the
-              optional "name or team" you typed, and the time. The name is seen only by the site's moderator;
-              it is not shown publicly. Approved links appear on team, event and match pages.
+              optional "name or team" you typed (for video links, your account name if you leave it blank),
+              and the time. The name is seen only by the site's moderator; it is not shown publicly. Approved
+              links appear on team, event and match pages.
             </li>
           </ul>
 

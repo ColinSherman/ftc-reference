@@ -102,3 +102,30 @@ describe("sameSitePost", () => {
     expect(h({})).toBe(false);
   });
 });
+
+describe("/videos/submit", () => {
+  it("shows signed-out visitors a sign-in note without touching D1 or the account Worker", async () => {
+    const { env, seen } = account({ handle: "x", admin: false });
+    const res = await app.request("/videos/submit?match=2025/USCALACALAM1/q3", {}, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toContain('href="/login"');
+    expect(seen).toHaveLength(0);
+  });
+
+  it("refuses posts that aren't from a signed-in session, before reading the form", async () => {
+    const post = (cookie: string | undefined, site: string) =>
+      app.request(
+        "/videos/submit",
+        {
+          method: "POST",
+          headers: { "sec-fetch-site": site, ...(cookie ? { cookie } : {}) },
+          body: new URLSearchParams({ source: "https://www.youtube.com/@x" }),
+        },
+        account(401).env,
+      );
+    expect((await post(SESSION, "cross-site")).status).toBe(403);
+    expect((await post(undefined, "same-origin")).status).toBe(401);
+    expect((await post(SESSION, "same-origin")).status).toBe(401);
+  });
+});

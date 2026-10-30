@@ -12,19 +12,31 @@ import type { AppContext } from "./env";
 const SESSION_COOKIE = /(?:^|;\s*)((?:__Secure-)?ftcref\.session_token=[^;]+)/;
 
 export type AdminUser = { handle: string };
+export type SignedInUser = { handle: string; admin: boolean };
 
-/** The signed-in admin, or null (signed out, not an admin, or accounts unavailable). */
-export async function adminUser(c: AppContext): Promise<AdminUser | null> {
-  const cookie = SESSION_COOKIE.exec(c.req.header("cookie") ?? "")?.[1];
+const sessionCookie = (c: AppContext) => SESSION_COOKIE.exec(c.req.header("cookie") ?? "")?.[1];
+
+/** Whether the browser sent a session cookie at all. Free (no subrequest); not proof of a session. */
+export const hasSessionCookie = (c: AppContext) => sessionCookie(c) !== undefined;
+
+/** The signed-in user, or null (signed out, or accounts unavailable). One subrequest to ftcref-account. */
+export async function signedInUser(c: AppContext): Promise<SignedInUser | null> {
+  const cookie = sessionCookie(c);
   if (!cookie || !c.env.ACCOUNT) return null;
   try {
     const res = await c.env.ACCOUNT.fetch("https://account/internal/whoami", { headers: { cookie } });
     if (!res.ok) return null;
-    const who = await res.json<{ handle: string; admin: boolean }>();
-    return who.admin ? { handle: who.handle } : null;
+    const who = await res.json<SignedInUser>();
+    return { handle: who.handle, admin: who.admin === true };
   } catch {
     return null;
   }
+}
+
+/** The signed-in admin, or null (signed out, not an admin, or accounts unavailable). */
+export async function adminUser(c: AppContext): Promise<AdminUser | null> {
+  const who = await signedInUser(c);
+  return who?.admin ? { handle: who.handle } : null;
 }
 
 export const isAdmin = async (c: AppContext) => (await adminUser(c)) !== null;
