@@ -2,9 +2,10 @@ import { ALL_SEASONS, CURRENT_SEASON, isSeason, seasonLabel } from "@ftcref/seas
 import { pacificDay } from "@ftcref/videos";
 import { Hono } from "hono";
 import type { Child } from "hono/jsx";
-import { adminUser, isAdmin } from "../admin";
+import { accountStats, adminUser, isAdmin } from "../admin";
 import { type AppContext, type Env, matchLabel, matchSlug } from "../env";
 import { Layout, Table } from "../views/layout";
+import { type Traffic, type TrafficTop, trafficReport } from "../visits";
 import { ytFor } from "../yt";
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
@@ -21,7 +22,10 @@ const FTC_JOBS = "('events','teams','eventMatches','awards','leagues','leagueMem
 /** Queue retries (wrangler.jsonc max_retries 5): this many failed attempts in a row exhausts them. */
 const ATTEMPTS = 6;
 
-export function AdminNav(props: { active: "overview" | "videos" | "photos" | "runs"; env?: string }) {
+export function AdminNav(props: {
+  active: "overview" | "videos" | "photos" | "runs" | "traffic";
+  env?: string;
+}) {
   const link = (k: typeof props.active, href: string, label: string) =>
     props.active === k ? <b>{label}</b> : <a href={href}>{label}</a>;
   return (
@@ -30,6 +34,7 @@ export function AdminNav(props: { active: "overview" | "videos" | "photos" | "ru
       {link("videos", "/admin/videos", "Videos")}
       {link("photos", "/admin/photos", "Photos")}
       {link("runs", "/admin/runs", "Sync log")}
+      {link("traffic", "/admin/traffic", "Traffic")}
       <span class={`pill env-${props.env ?? "local"}`} title="Which deployment's data you are looking at">
         {props.env ?? "local"}
       </span>
@@ -88,6 +93,118 @@ adminRoutes.get("/admin", async (c) => {
   if (!(await adminUser(c))) return c.html(<NotAdminPage />, 403, noStore);
   return c.html(await overview(c), 200, noStore);
 });
+
+adminRoutes.get("/admin/traffic", async (c) => {
+  if (!(await adminUser(c))) return c.html(<NotAdminPage />, 403, noStore);
+  const [traffic, accounts] = await Promise.all([
+    trafficReport(c.env).catch((e: Error) => e),
+    accountStats(c),
+  ]);
+  return c.html(
+    <Layout title="Traffic">
+      <h1>Admin</h1>
+      <AdminNav active="traffic" env={c.env.ENV_NAME} />
+
+      <h2>Accounts</h2>
+      {accounts ? (
+        <p class="sitestats">
+          <b>{accounts.users}</b> accounts · <b>{accounts.new7}</b> new this week · active:{" "}
+          <b>{accounts.active1}</b> today, <b>{accounts.active7}</b> this week, <b>{accounts.active30}</b> in
+          30 days · <b>{accounts.keys}</b> API keys
+        </p>
+      ) : (
+        <p class="note">Account counts unavailable (ftcref-account didn't answer).</p>
+      )}
+
+      <h2>Visitors</h2>
+      {traffic === null ? (
+        <p class="note">
+          Not configured: set the <code>CF_ANALYTICS_TOKEN</code> secret (Account Analytics: Read) on this
+          Worker.
+        </p>
+      ) : traffic instanceof Error ? (
+        <p class="err">{traffic.message}</p>
+      ) : (
+        <TrafficTables t={traffic} />
+      )}
+      <p class="note">
+        Human page loads only (browser navigations; bots, prefetches and /admin left out). A visitor is a
+        daily-salted hash of IP and browser, so the same person counts once a day and can't be followed across
+        days. Days are Pacific. No cookies; nothing stored in D1.
+      </p>
+    </Layout>,
+    200,
+    noStore,
+  );
+});
+
+function TrafficTables(props: { t: Traffic }) {
+  const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "");
+  const tops = (title: string, head: string, rows: TrafficTop[], link?: boolean) => (
+    <div>
+      <h3>{title}</h3>
+      <Table>
+        <thead>
+          <tr>
+            <th class="l">{head}</th>
+            <th>Visitors</th>
+            <th>Views</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr>
+              <td class="l wrap">
+                {link ? (
+                  <a href={r.key} style="word-break:break-all">
+                    {r.key}
+                  </a>
+                ) : (
+                  r.key || "—"
+                )}
+              </td>
+              <td>{r.visitors}</td>
+              <td>{r.views}</td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  );
+  return (
+    <>
+      <Table>
+        <thead>
+          <tr>
+            <th class="l">Day</th>
+            <th>Visitors</th>
+            <th>Views</th>
+            <th title="Page views with a session cookie">Signed in</th>
+            <th>Mobile</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.t.days.map((d) => (
+            <tr>
+              <td class="l">{d.day}</td>
+              <td>
+                <b>{d.visitors}</b>
+              </td>
+              <td>{d.views}</td>
+              <td>{pct(d.signed_in, d.views)}</td>
+              <td>{pct(d.mobile, d.views)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+        {tops("Top pages (7 days)", "Page", props.t.pages, true)}
+        {tops("Top countries (7 days)", "Country", props.t.countries)}
+        {tops("Top referrers (7 days)", "Site", props.t.referrers)}
+      </div>
+    </>
+  );
+}
 
 async function overview(c: AppContext) {
   // Read session: with D1 read replication these run on a replica, not the primary the site writes to.

@@ -39,6 +39,27 @@ export async function adminUser(c: AppContext): Promise<AdminUser | null> {
   return who?.admin ? { handle: who.handle } : null;
 }
 
+export type AccountStats = {
+  users: number;
+  new7: number;
+  active1: number;
+  active7: number;
+  active30: number;
+  keys: number;
+};
+
+/** Account counts from ftcref-account; it answers only for an admin's session cookie. */
+export async function accountStats(c: AppContext): Promise<AccountStats | null> {
+  const cookie = sessionCookie(c);
+  if (!cookie || !c.env.ACCOUNT) return null;
+  try {
+    const res = await c.env.ACCOUNT.fetch("https://account/internal/stats", { headers: { cookie } });
+    return res.ok ? await res.json<AccountStats>() : null;
+  } catch {
+    return null;
+  }
+}
+
 export const isAdmin = async (c: AppContext) => (await adminUser(c)) !== null;
 
 /**
