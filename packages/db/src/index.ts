@@ -60,9 +60,21 @@ function bindable(table: string, col: string, v: unknown): string | number | nul
   return JSON.stringify(v);
 }
 
-/** Run statements in batches (each batch is one implicit transaction). */
+/**
+ * Run statements in batches (each batch is one implicit transaction). Returns the total rows
+ * changed (D1 `meta.changes`); a statement that reports no count is treated as one change, so
+ * callers that skip work on 0 never skip it by mistake.
+ */
 export async function runBatched(db: D1Database, stmts: D1PreparedStatement[], size = 200) {
-  for (let i = 0; i < stmts.length; i += size) await db.batch(stmts.slice(i, i + size));
+  let changes = 0;
+  for (let i = 0; i < stmts.length; i += size) {
+    const results = await db.batch(stmts.slice(i, i + size));
+    for (const r of results ?? []) {
+      const n = r?.meta?.changes;
+      changes += typeof n === "number" ? n : 1;
+    }
+  }
+  return changes;
 }
 
 export const bool = (v: unknown) => (v ? 1 : 0);

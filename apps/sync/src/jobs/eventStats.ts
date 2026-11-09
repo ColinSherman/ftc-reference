@@ -136,8 +136,16 @@ export async function recomputeEventStats(db: D1Database, season: number, code: 
     };
   });
 
-  await runBatched(db, upsertStatements(db, "team_event_stats", rows, ["season", "event_code", "team"]));
-  await recomputeSeasonStats(db, season, [...per.keys()]);
+  const changed = await runBatched(
+    db,
+    upsertStatements(db, "team_event_stats", rows, ["season", "event_code", "team"]),
+  );
+  // The rollup reads team_event_stats, plus every played match for best single-match NP. With no
+  // event-stat row changed it has nothing new to read, unless playoffs sit beside quals: those
+  // matches feed best NP but not the (quals-only) event stats, so a playoff score change would
+  // otherwise never reach the season tables.
+  const playoffsBesideQuals = hasQuals && allScores.length !== scores.length;
+  if (changed > 0 || playoffsBesideQuals) await recomputeSeasonStats(db, season, [...per.keys()]);
   return rows.length;
 }
 
