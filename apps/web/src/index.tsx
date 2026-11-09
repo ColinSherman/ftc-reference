@@ -19,6 +19,7 @@ import { teamRoutes } from "./routes/team";
 import { videoRoutes } from "./routes/videos";
 import { seoHead } from "./seoTags";
 import { Layout } from "./views/layout";
+import { recordPageView } from "./visits";
 
 const app = new Hono<{ Bindings: Env }>({ strict: false });
 
@@ -30,6 +31,12 @@ app.use("*", async (c, next) => {
     return c.redirect(url.toString(), 301);
   }
   await next();
+});
+
+// Count human page views (visits.ts); admin pages are the admins themselves, so they're left out.
+app.use("*", async (c, next) => {
+  await next();
+  if (!c.req.path.startsWith("/admin")) recordPageView(c);
 });
 
 // Canonical URL and indexability. Done here (not in Layout) so every page gets it, cached or not.

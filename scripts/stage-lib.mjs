@@ -72,6 +72,7 @@ export function boundIds(config) {
         ],
         services: (e.services ?? []).map((s) => s.service),
         ratelimits: (e.ratelimits ?? []).map((r) => String(r.namespace_id)),
+        analytics: (e.analytics_engine_datasets ?? []).map((a) => a.dataset),
       },
     ]),
   );
@@ -107,6 +108,11 @@ export function checkIsolated(config, path) {
   }
   for (const r of stage.ratelimits)
     if (prod.ratelimits.includes(r)) fail(`rate limit namespace ${r} is shared with production`);
+  for (const a of stage.analytics) {
+    if (!a.startsWith("ftcref_stage_"))
+      fail(`Analytics Engine dataset ${a} (staging datasets are ftcref_stage_*)`);
+    if (prod.analytics.includes(a)) fail(`Analytics Engine dataset ${a} is bound in production`);
+  }
 }
 
 /**

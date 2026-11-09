@@ -518,6 +518,19 @@ describe("admin role", () => {
     expect(await (await whoami(env, google)).json()).toEqual({ handle: "user-101234", admin: false });
   });
 
+  it("stats: account counts for admins only", async () => {
+    const { env } = makeEnv({ ADMIN_ACCOUNTS: "github:4201" });
+    expect((await req(env, new Jar(), "/internal/stats")).status).toBe(401);
+    stubProviders();
+    const google = new Jar();
+    await signIn(env, google, "google");
+    expect((await req(env, google, "/internal/stats")).status).toBe(403);
+    const gh = new Jar();
+    await signIn(env, gh, "github");
+    const stats = await (await req(env, gh, "/internal/stats")).json();
+    expect(stats).toEqual({ users: 2, new7: 2, active1: 2, active7: 2, active30: 2, keys: 0 });
+  });
+
   it("whoami sees a revoked session at once, despite the session cookie cache", async () => {
     const { db, env } = makeEnv({ ADMIN_ACCOUNTS: "github:4201" });
     stubProviders();

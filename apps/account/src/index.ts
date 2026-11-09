@@ -202,6 +202,36 @@ app.get("/internal/whoami", async (c) => {
   return c.json({ handle: session.user.name, admin: isAdminAccount(c.env, accounts) });
 });
 
+/**
+ * Account counts for ftcref-web's /admin/traffic, for an admin's session cookie only (else 403/401).
+ * "Active" = a session created or refreshed in the window (Better Auth refreshes once a day of use).
+ */
+app.get("/internal/stats", async (c) => {
+  const headers = c.req.raw.headers;
+  const session = await c.var.auth.api.getSession({ headers, query: { disableCookieCache: true } });
+  if (!session) return c.json({ error: "signed_out" }, 401);
+  if (!isAdminAccount(c.env, await c.var.auth.api.listUserAccounts({ headers })))
+    return c.json({ error: "not_admin" }, 403);
+  return c.json(await accountStats(c.env.AUTH_DB));
+});
+
+export async function accountStats(db: D1Database, now = new Date()) {
+  const ago = (days: number) => new Date(now.getTime() - days * 86400_000).toISOString();
+  const [d1, d7, d30] = [ago(1), ago(7), ago(30)];
+  const row = await db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM "user") AS users,
+         (SELECT COUNT(*) FROM "user" WHERE "createdAt" >= ?2) AS new7,
+         (SELECT COUNT(DISTINCT "userId") FROM "session" WHERE "updatedAt" >= ?1) AS active1,
+         (SELECT COUNT(DISTINCT "userId") FROM "session" WHERE "updatedAt" >= ?2) AS active7,
+         (SELECT COUNT(DISTINCT "userId") FROM "session" WHERE "updatedAt" >= ?3) AS active30,
+         (SELECT COUNT(*) FROM "api_key") AS keys`,
+    )
+    .bind(d1, d7, d30)
+    .first<Record<string, number>>();
+  return row ?? {};
+}
+
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 
 /** Daily: drop expired sessions, sign-in state and API keys, so nothing lingers past its use. */

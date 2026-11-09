@@ -11,11 +11,13 @@ const prod = {
   d1_databases: [{ database_name: "ftcref-auth", database_id: "prod-auth" }],
   services: [{ binding: "ACCOUNT", service: "ftcref-account" }],
   ratelimits: [{ name: "AUTH_LIMIT", namespace_id: "1001" }],
+  analytics_engine_datasets: [{ binding: "PAGEVIEWS", dataset: "ftcref_pageviews" }],
 };
 const staging = {
   d1_databases: [{ database_name: "ftcref-stage-auth", database_id: "stage-auth" }],
   services: [{ binding: "ACCOUNT", service: "ftcref-account-stage" }],
   ratelimits: [{ name: "AUTH_LIMIT", namespace_id: "1002" }],
+  analytics_engine_datasets: [{ binding: "PAGEVIEWS", dataset: "ftcref_stage_pageviews" }],
 };
 const check = (stage: object) => () =>
   checkIsolated({ ...prod, env: { staging: { ...staging, ...stage } } }, "test");
@@ -34,6 +36,7 @@ describe("staging isolation", () => {
     expect(check({ d1_databases: [{ database_name: "ftcref-other", database_id: "x" }] })).toThrow(/D1/);
     expect(check({ services: prod.services })).toThrow(/service ftcref-account/);
     expect(check({ ratelimits: prod.ratelimits })).toThrow(/rate limit namespace 1001/);
+    expect(check({ analytics_engine_datasets: prod.analytics_engine_datasets })).toThrow(/ftcref_pageviews/);
   });
 });
 

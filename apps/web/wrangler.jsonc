@@ -25,7 +25,13 @@
   "kv_namespaces": [{ "binding": "CACHE_VER", "id": "ec6ff98747db4745ba7351828af13944" }],
   // Admin "Re-sync event" sends jobs straight to the sync Worker's queue. vars/queues are not inherited:
   // the staging env below sets its own.
-  "vars": { "ENV_NAME": "production" },
+  // Page views (src/visits.ts). /admin/traffic reads them with the CF_ANALYTICS_TOKEN secret.
+  "analytics_engine_datasets": [{ "binding": "PAGEVIEWS", "dataset": "ftcref_pageviews" }],
+  "vars": {
+    "ENV_NAME": "production",
+    "PAGEVIEWS_DATASET": "ftcref_pageviews",
+    "CF_ACCOUNT_ID": "a92ff6c4b72094e5030585f2363b940a"
+  },
   "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-sync-jobs" }] },
   // Sign-in and account data live in ftcref-account (apps/account); this Worker only forwards to it.
   "services": [{ "binding": "ACCOUNT", "service": "ftcref-account" }],
@@ -51,7 +57,12 @@
       ],
       "version_metadata": { "binding": "CF_VERSION" },
       "kv_namespaces": [{ "binding": "CACHE_VER", "id": "3e819b0648c04641a586463e186bbe5b" }],
-      "vars": { "ENV_NAME": "staging" },
+      "analytics_engine_datasets": [{ "binding": "PAGEVIEWS", "dataset": "ftcref_stage_pageviews" }],
+      "vars": {
+        "ENV_NAME": "staging",
+        "PAGEVIEWS_DATASET": "ftcref_stage_pageviews",
+        "CF_ACCOUNT_ID": "a92ff6c4b72094e5030585f2363b940a"
+      },
       "queues": { "producers": [{ "binding": "SYNC_QUEUE", "queue": "ftcref-stage-sync-jobs" }] },
       "services": [{ "binding": "ACCOUNT", "service": "ftcref-account-stage" }]
     }

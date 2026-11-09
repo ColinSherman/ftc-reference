@@ -15,6 +15,14 @@ export interface Env {
   SYNC_QUEUE?: Queue<ResyncMessage>;
   /** ftcref-account Worker (sign-in, sessions). The only way this Worker touches accounts. */
   ACCOUNT?: Fetcher;
+  /** Workers Analytics Engine dataset for page views (visits.ts). */
+  PAGEVIEWS?: AnalyticsEngineDataset;
+  /** That dataset's name, for /admin/traffic's SQL queries (wrangler.jsonc vars). */
+  PAGEVIEWS_DATASET?: string;
+  /** Cloudflare account id, for the Analytics Engine SQL API (wrangler.jsonc vars). */
+  CF_ACCOUNT_ID?: string;
+  /** Secret: API token with only Account Analytics: Read, for /admin/traffic. */
+  CF_ANALYTICS_TOKEN?: string;
 }
 
 export type ResyncMessage = { job: "eventMatches" | "awards"; season: number; code: string; force: true };

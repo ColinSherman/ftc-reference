@@ -32,7 +32,7 @@ browser pane: `resize_window` + `document.querySelectorAll('.scroll')` comparing
   Never hard-code a season's field names elsewhere; read them through the descriptor.
 - **Cloudflare account:** always the personal account `a92ff6c4b72094e5030585f2363b940a`
   (pinned in each `wrangler.jsonc`), never the Team 4201 account.
-- **Secrets** (`FTC_API_*`, the sync Worker's `ADMIN_TOKEN`, `YOUTUBE_API_KEY`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_*`, `GITHUB_CLIENT_*`) are set by the user with
+- **Secrets** (`FTC_API_*`, the sync Worker's `ADMIN_TOKEN`, `YOUTUBE_API_KEY`, `CF_ANALYTICS_TOKEN`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_*`, `GITHUB_CLIENT_*`) are set by the user with
   `wrangler secret put` (or, for staging's `ADMIN_TOKEN`, by CI from the `STAGE_ADMIN_TOKEN` repo
   secret); never write or echo them.
 - **YouTube quota:** prefer free RSS feeds; `search.list` (100 units) only for channel discovery.

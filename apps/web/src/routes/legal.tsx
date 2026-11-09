@@ -8,7 +8,7 @@ export const legalRoutes = new Hono<{ Bindings: Env }>();
 /** Forwarded to the owner's inbox by Cloudflare Email Routing (set up on the ftc-reference.com zone). */
 export const CONTACT_EMAIL = "contact@ftc-reference.com";
 export const REPO_URL = "https://github.com/ColinSherman/ftc-reference";
-const UPDATED = "October 27, 2026";
+const UPDATED = "October 30, 2026";
 
 const Mail = () => <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>;
 
@@ -62,7 +62,7 @@ legalRoutes.get("/privacy", (c) =>
           <p>
             FTC-Reference ("the site", "we") is a free, non-commercial fan site for <i>FIRST</i> Tech
             Challenge statistics. We collect as little as we can. You never need an account to use the site,
-            and there are no ads and no analytics or tracking scripts.
+            and there are no ads and no third-party tracking. We count visits without cookies (below).
           </p>
 
           <h2>What we store</h2>
@@ -75,6 +75,14 @@ legalRoutes.get("/privacy", (c) =>
             <li>
               <b>Theme.</b> Your light/dark choice is kept in your browser's local storage and never sent to
               us.
+            </li>
+            <li>
+              <b>Visit counts.</b> For each page you load we record the page, your country, whether it's a
+              phone or a computer, the site that linked you here, and whether you're signed in. To count
+              visitors without cookies we also record a code made by hashing your IP address and browser with
+              a random key that changes every day and is deleted after two days, so the same visitor counts
+              once a day but can't be recognized from one day to the next. Your IP address itself is not
+              stored. These records are kept for three months.
             </li>
             <li>
               <b>Submissions.</b> If you submit a video or photo link, we store the link, any caption, the

@@ -4,6 +4,7 @@
 //
 // The committed configs may still hold the __STAGE_*_ID__ placeholders; this fills them in the working
 // tree and prints the ids so they can be committed. A committed id that doesn't match is an error.
+// Analytics Engine datasets (ftcref_stage_pageviews) need nothing here: the first write creates them.
 import { readFileSync, writeFileSync } from "node:fs";
 import {
   assertStagingIsolated,
