@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { recomputeSeasonStats, refreshSeasonRanks } from "./eventStats";
+import { recomputeEventStats, recomputeSeasonStats, refreshSeasonRanks } from "./eventStats";
 import { eventCountsStatement } from "./events";
 
 const MIGRATIONS_DIR = join(__dirname, "../../../../packages/db/migrations");
@@ -16,9 +16,9 @@ function d1(db: DatabaseSync): D1Database {
   const stmt = (sql: string, args: (string | number | null)[] = []) => {
     const run = () => {
       const s = db.prepare(sql);
-      if (s.columns().length) return { results: s.all(...args) };
-      s.run(...args);
-      return { results: [] };
+      if (s.columns().length) return { results: s.all(...args), meta: { changes: 0 } };
+      const r = s.run(...args);
+      return { results: [], meta: { changes: Number(r.changes) } };
     };
     return {
       bind: (...a: (string | number | null)[]) => stmt(sql, a),
@@ -113,5 +113,49 @@ describe("recomputeSeasonStats", () => {
              VALUES (2026, 2, 1, 1, 0, 1, 0, '${NOW}')`);
     await recomputeSeasonStats(d1(db), 2026, [2]);
     expect(row(db, "SELECT COUNT(*) AS n FROM team_official_stats WHERE team = 2")).toEqual({ n: 0 });
+  });
+});
+
+describe("recomputeEventStats", () => {
+  /** Run once so the event's stats are current, then clear the rollup to see whether it runs again. */
+  async function settled(db: DatabaseSync) {
+    await recomputeEventStats(d1(db), 2026, "QUAL");
+    db.exec("DELETE FROM team_season_stats; DELETE FROM team_official_stats;");
+  }
+  const rolledUp = (db: DatabaseSync) => row(db, "SELECT COUNT(*) AS n FROM team_season_stats").n;
+
+  it("skips the season rollup when no event stat changed", async () => {
+    const db = seeded();
+    await settled(db);
+    await recomputeEventStats(d1(db), 2026, "QUAL");
+    expect(rolledUp(db)).toBe(0);
+  });
+
+  it("rolls up when a score change moves the event stats", async () => {
+    const db = seeded();
+    await settled(db);
+    db.exec("UPDATE match_scores SET np = 120, total = 120 WHERE match_id = 10 AND alliance = 'R'");
+    await recomputeEventStats(d1(db), 2026, "QUAL");
+    expect(rolledUp(db)).toBe(1);
+    expect(row(db, "SELECT best_np FROM team_season_stats WHERE team = 1")).toEqual({ best_np: 150 });
+  });
+
+  it("always rolls up when playoffs sit beside quals (they feed best NP, not event stats)", async () => {
+    const db = seeded();
+    db.exec(`
+      INSERT INTO matches (id, season, event_code, level, series, match_number, played, updated_at)
+      VALUES (12, 2026, 'QUAL', 'P', 1, 1, 1, '${NOW}');
+      INSERT INTO match_teams (match_id, station, alliance, team) VALUES (12, 'Red1', 'R', 1);
+      INSERT INTO match_scores (match_id, alliance, season, auto, teleop, endgame, np, total, c1, c2, c3, c4, detail, updated_at)
+      VALUES (12, 'R', 2026, 0, 0, 0, 110, 110, 0, 0, 0, 0, '{}', '${NOW}');
+    `);
+    await settled(db);
+    db.exec("UPDATE match_scores SET np = 200, total = 200 WHERE match_id = 12");
+    await recomputeEventStats(d1(db), 2026, "QUAL");
+    expect(rolledUp(db)).toBe(1);
+    expect(row(db, "SELECT best_np, best_np_match_id FROM team_official_stats WHERE team = 1")).toEqual({
+      best_np: 200,
+      best_np_match_id: 12,
+    });
   });
 });
