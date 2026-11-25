@@ -122,9 +122,12 @@ export function checkIsolated(config, path) {
  * each CREATE INDEX gets a file to itself: indexing a big table is a request's worth of work alone.
  * Statements are made idempotent (INSERT OR IGNORE, IF NOT EXISTS; every table has a primary key) so
  * a file can be imported again after wrangler reports a failure for an import that in fact landed.
+ * Rows of the tables in `skipRows` are dropped (their CREATE TABLE and indexes are kept), so a big
+ * log table costs neither import time nor D1 rows written.
  * Streams the dump (it outgrows a JS string). Resolves to the file paths, in import order.
  */
-export async function splitDump(dump, dir, maxChars) {
+export async function splitDump(dump, dir, maxChars, skipRows = []) {
+  const skip = skipRows.map((t) => `INSERT INTO "${t.replaceAll('"', '""')}" `);
   const files = [];
   const prelude = [];
   let part = [];
@@ -145,6 +148,10 @@ export async function splitDump(dump, dir, maxChars) {
     // A statement ends at a line ending in `;` outside a string literal ('' escapes keep parity).
     for (let i = 0; i < line.length; i++) if (line.charCodeAt(i) === 39) inStr = !inStr;
     if (inStr || !line.trimEnd().endsWith(";")) continue;
+    if (skip.some((p) => stmt[0].startsWith(p))) {
+      stmt = [];
+      continue;
+    }
     const sql = stmt
       .join("\n")
       .replace(/^INSERT INTO /, "INSERT OR IGNORE INTO ")

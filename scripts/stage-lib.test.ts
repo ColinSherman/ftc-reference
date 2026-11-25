@@ -54,11 +54,11 @@ const DUMP = [
   "CREATE UNIQUE INDEX t_u ON t (b, a);",
 ].join("\n");
 
-async function split(maxChars: number): Promise<string[]> {
+async function split(maxChars: number, skipRows?: string[]): Promise<string[]> {
   const dir = mkdtempSync(join(tmpdir(), "split-"));
   const dump = join(dir, "dump.sql");
   writeFileSync(dump, `${DUMP}\n`);
-  const files: string[] = await splitDump(dump, dir, maxChars);
+  const files: string[] = await splitDump(dump, dir, maxChars, skipRows);
   return files.map((f) => readFileSync(f, "utf8"));
 }
 
@@ -87,6 +87,13 @@ describe("splitDump", () => {
     expect(parts[2]).toBe(
       "PRAGMA defer_foreign_keys=TRUE;\nCREATE UNIQUE INDEX IF NOT EXISTS t_u ON t (b, a);\n",
     );
+  });
+
+  it("drops the rows of skipped tables but keeps their schema", async () => {
+    const [first] = await split(1e6, ["t"]);
+    expect(first).toContain("CREATE TABLE IF NOT EXISTS t (");
+    expect(first).not.toContain("INSERT");
+    expect(first).not.toContain("two lines");
   });
 
   it("makes every statement safe to import twice", async () => {

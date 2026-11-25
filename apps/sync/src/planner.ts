@@ -47,21 +47,27 @@ export function isDue(e: PlanRow, now: Date): boolean {
 export async function planLive(env: Env, season: number, now = new Date()): Promise<SyncMessage[]> {
   const lo = new Date(now.getTime() - 3 * DAY).toISOString().slice(0, 10);
   const hi = new Date(now.getTime() + DAY).toISOString().slice(0, 10);
+  // The key prefix is bound as a string: D1 binds JS numbers as REAL, so `?1 || '/schedule/'` built
+  // "2026.0/schedule/…", the join never matched, and every event in the window polled every minute.
   const { results } = await env.DB.prepare(
     `SELECT e.code, e.timezone, e.date_start, e.date_end, s.last_checked_at, s.last_changed_at
      FROM events e
-     LEFT JOIN sync_state s ON s.key = ?1 || '/schedule/' || e.code || '/qual/hybrid'
+     LEFT JOIN sync_state s ON s.key = ?4 || e.code || '/qual/hybrid'
      WHERE e.season = ?1 AND e.removed_at IS NULL
        AND substr(e.date_start, 1, 10) <= ?3 AND substr(e.date_end, 1, 10) >= ?2`,
   )
-    .bind(season, lo, hi)
+    .bind(season, lo, hi, `${season}/schedule/`)
     .all<PlanRow>();
 
   const msgs: SyncMessage[] = [];
-  const awardsTick = now.getUTCMinutes() % 5 === 0;
+  // Awards: every 5 minutes while an event runs, hourly in the days after (late postings).
+  const liveTick = now.getUTCMinutes() % 5 === 0;
+  const endedTick = now.getUTCMinutes() === 0;
   for (const e of results) {
     if (isDue(e, now)) msgs.push({ job: "eventMatches", season, code: e.code });
-    if (awardsTick && localDate(now, e.timezone) >= e.date_start.slice(0, 10)) {
+    const today = localDate(now, e.timezone);
+    if (today < e.date_start.slice(0, 10)) continue;
+    if (today > e.date_end.slice(0, 10) ? endedTick : liveTick) {
       msgs.push({ job: "awards", season, code: e.code });
     }
   }
