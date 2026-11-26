@@ -4,7 +4,8 @@ name: Refresh staging data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 8 * * 1" # Mondays 08:17 UTC
+    # Monthly, not weekly: each refresh rewrites every staging row, which is billed as D1 rows written.
+    - cron: "17 8 1 * *" # 1st of the month, 08:17 UTC
 
 concurrency:
   group: stage

@@ -14,6 +14,9 @@ import { assertStagingIsolated, PROD_DB, STAGE_DB, splitDump, wrangler } from ".
 // ~25 MB of SQL per import request: about 1 s of SQLite work locally, well inside D1's limit.
 const CHUNK_CHARS = 25_000_000;
 const IMPORT_TRIES = 3;
+// Copied without rows: production's sync log is ~40% of the dump's rows, and every imported row is a
+// billed D1 row written (plus one per index). Staging's own sync runs fill it again.
+const SKIP_ROWS = ["sync_runs"];
 
 assertStagingIsolated();
 const stage = (args, opts) => wrangler([...args, "--env", "staging"], opts);
@@ -52,7 +55,7 @@ for (const t of tables) stageQuery(`DROP TABLE IF EXISTS "${t.replaceAll('"', '"
 // idempotent, so a failed one is retried: wrangler sometimes reports "Not currently importing
 // anything." for an import that completed. A part failing every try leaves staging half-filled:
 // rerun, the reset above clears it.
-const parts = await splitDump(dump, dir, CHUNK_CHARS);
+const parts = await splitDump(dump, dir, CHUNK_CHARS, SKIP_ROWS);
 for (const [i, part] of parts.entries()) {
   for (let attempt = 1; ; attempt++) {
     console.log(

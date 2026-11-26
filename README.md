@@ -115,7 +115,7 @@ Three environments, each with its own data. Nothing outside production ever writ
 | Accounts | `pnpm dev:account` (:8789), dev sign-in | `ftcref-account-stage`, D1 `ftcref-stage-auth` (never seeded) | `ftcref-account`, D1 `ftcref-auth` |
 | D1 | local SQLite in `.wrangler/state` | `ftcref-stage` | `ftcref` |
 | KV / queues | local | `ftcref-stage-cache`, `ftcref-stage-*` | `CACHE_VER`, `ftcref-sync-jobs`, `ftcref-backfill`, `ftcref-sync-dlq` |
-| Data | mock API (`scripts/mock-ftc-api.mjs`) | copy of production, refreshed weekly | FTC Events API |
+| Data | mock API (`scripts/mock-ftc-api.mjs`) | copy of production, refreshed monthly | FTC Events API |
 | Deployed by | you | every push to a PR (`stage.yml`) | merge to `main` (`deploy.yml`) |
 | Migrations | `pnpm db:migrate:local`, `pnpm db:migrate:auth:local` | the PR's migrations, on push | on merge, before the deploy |
 
@@ -150,8 +150,9 @@ and migrations can be previewed against real data without touching production. T
 6. Re-syncs any events listed as `stage-resync: 2026/KZASN1` lines in the PR body, using the PR's sync code.
 
 **Staging data.** The staging sync Worker has no cron, so staging doesn't poll the FTC API on its own.
-"Refresh staging data" (`stage-seed.yml`) replaces it with a fresh production copy every Monday, or on
-demand from the Actions tab. To preview a change to ingest or scoring, add `stage-resync:` lines to the PR
+"Refresh staging data" (`stage-seed.yml`) replaces it with a fresh production copy on the 1st of each month,
+or on demand from the Actions tab (run it by hand when a PR needs this week's production data). The copy
+leaves out production's `sync_runs` rows (the sync log): every imported row is a billed D1 row written. To preview a change to ingest or scoring, add `stage-resync:` lines to the PR
 body (or use the `resync` input when running "Deploy staging" by hand).
 
 **Shared and serialized.** There is one staging environment. Runs are queued (never cancelled), and the

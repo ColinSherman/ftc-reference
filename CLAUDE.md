@@ -75,7 +75,7 @@ Three environments, each with its own data (README "Environments" has the full t
   the season descriptor) or in a migration, so re-syncs and fresh environments get the same result.
 - **Migrations:** staging gets a PR's migrations on push, production on merge, before the new code
   deploys. Old production code runs briefly against the new schema, so keep each migration
-  backwards-compatible: add first, drop in a later PR. A weekly refresh (`stage-seed.yml`) resets
+  backwards-compatible: add first, drop in a later PR. A monthly refresh (`stage-seed.yml`) resets
   staging to production, after which the next PR push re-applies that PR's migrations.
 - **Local is the contributor path.** Fork PRs get no staging deploy (no secrets). Everything must stay
   runnable with `pnpm dev:sync` + `pnpm dev:web` + `scripts/mock-ftc-api.mjs`, with no Cloudflare
